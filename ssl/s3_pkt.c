@@ -246,7 +246,7 @@ static int ssl3_get_record(SSL *s)
 	unsigned char *p;
 	unsigned char md[EVP_MAX_MD_SIZE];
 	short version;
-	unsigned mac_size;
+	unsigned mac_size, orig_len;
 	size_t extra;
 
 	rr= &(s->s3->rrec);
@@ -351,7 +351,6 @@ again:
 
 	/* decrypt in place in 'rr->input' */
 	rr->data=rr->input;
-	rr->orig_len=rr->length;
 
 	enc_err = s->method->ssl3_enc->enc(s,0);
 	/* enc_err is:
@@ -382,15 +381,18 @@ printf("\n");
 		mac_size=EVP_MD_size(s->read_hash);
 		OPENSSL_assert(mac_size <= EVP_MAX_MD_SIZE);
 
+		/* kludge: *_cbc_remove_padding passes padding length in rr->type */
+		orig_len = rr->length+((unsigned int)rr->type>>8);
+
 		/* orig_len is the length of the record before any padding was
 		 * removed. This is public information, as is the MAC in use,
 		 * therefore we can safely process the record in a different
 		 * amount of time if it's too short to possibly contain a MAC.
 		 */
-		if (rr->orig_len < mac_size ||
+		if (orig_len < mac_size ||
 		    /* CBC records must have a padding length byte too. */
 		    (EVP_CIPHER_CTX_mode(s->enc_read_ctx) == EVP_CIPH_CBC_MODE &&
-		     rr->orig_len < mac_size+1))
+		     orig_len < mac_size+1))
 			{
 			al=SSL_AD_DECODE_ERROR;
 			SSLerr(SSL_F_SSL3_GET_RECORD,SSL_R_LENGTH_TOO_SHORT);
@@ -405,12 +407,12 @@ printf("\n");
 			 * without leaking the contents of the padding bytes.
 			 * */
 			mac = mac_tmp;
-			ssl3_cbc_copy_mac(mac_tmp, rr, mac_size);
+			ssl3_cbc_copy_mac(mac_tmp, rr, mac_size, orig_len);
 			rr->length -= mac_size;
 			}
 		else
 			{
-			/* In this case there's no padding, so |rec->orig_len|
+			/* In this case there's no padding, so |orig_len|
 			 * equals |rec->length| and we checked that there's
 			 * enough bytes for |mac_size| above. */
 			rr->length -= mac_size;
@@ -527,10 +529,11 @@ int ssl3_do_compress(SSL *ssl)
 int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len)
 	{
 	const unsigned char *buf=buf_;
-	unsigned int tot,n,nw;
-	int i;
+	unsigned int n,nw;
+	int i,tot;
 
 	s->rwstate=SSL_NOTHING;
+	OPENSSL_assert(s->s3->wnum < INT_MAX);
 	tot=s->s3->wnum;
 	s->s3->wnum=0;
 
@@ -544,6 +547,22 @@ int ssl3_write_bytes(SSL *s, int type, const void *buf_, int len)
 			return -1;
 			}
 		}
+
+	/* ensure that if we end up with a smaller value of data to write 
+	 * out than the the original len from a write which didn't complete 
+	 * for non-blocking I/O and also somehow ended up avoiding 
+	 * the check for this in ssl3_write_pending/SSL_R_BAD_WRITE_RETRY as
+	 * it must never be possible to end up with (len-tot) as a large
+	 * number that will then promptly send beyond the end of the users
+	 * buffer ... so we trap and report the error in a way the user
+	 * will notice
+	 */
+	if (len < tot)
+		{
+		SSLerr(SSL_F_SSL3_WRITE_BYTES,SSL_R_BAD_LENGTH);
+		return(-1);
+		}
+
 
 	n=(len-tot);
 	for (;;)
@@ -1147,6 +1166,15 @@ start:
 			goto f_err;
 			}
 
+		if (!(s->s3->flags & SSL3_FLAGS_CCS_OK))
+			{
+			al=SSL_AD_UNEXPECTED_MESSAGE;
+			SSLerr(SSL_F_SSL3_READ_BYTES,SSL_R_CCS_RECEIVED_EARLY);
+			goto f_err;
+			}
+
+		s->s3->flags &= ~SSL3_FLAGS_CCS_OK;
+
 		rr->length=0;
 
 		if (s->msg_callback)
@@ -1278,7 +1306,7 @@ int ssl3_do_change_cipher_spec(SSL *s)
 
 	if (s->s3->tmp.key_block == NULL)
 		{
-		if (s->session == NULL) 
+		if (s->session == NULL || s->session->master_key_length == 0)
 			{
 			/* might happen if dtls1_read_bytes() calls this */
 			SSLerr(SSL_F_SSL3_DO_CHANGE_CIPHER_SPEC,SSL_R_CCS_RECEIVED_EARLY);

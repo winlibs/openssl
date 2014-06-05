@@ -330,8 +330,8 @@ dtls1_process_record(SSL *s)
 	int i,al;
 	int enc_err;
 	SSL_SESSION *sess;
-    SSL3_RECORD *rr;
-	unsigned int mac_size;
+	SSL3_RECORD *rr;
+	unsigned int mac_size, orig_len;
 	unsigned char md[EVP_MAX_MD_SIZE];
 
 	rr= &(s->s3->rrec);
@@ -362,7 +362,6 @@ dtls1_process_record(SSL *s)
 
 	/* decrypt in place in 'rr->input' */
 	rr->data=rr->input;
-	rr->orig_len=rr->length;
 
 	enc_err = s->method->ssl3_enc->enc(s,0);
 	/* enc_err is:
@@ -394,15 +393,18 @@ printf("\n");
 		mac_size=EVP_MD_size(s->read_hash);
 		OPENSSL_assert(mac_size <= EVP_MAX_MD_SIZE);
 
+		/* kludge: *_cbc_remove_padding passes padding length in rr->type */
+		orig_len = rr->length+((unsigned int)rr->type>>8);
+
 		/* orig_len is the length of the record before any padding was
 		 * removed. This is public information, as is the MAC in use,
 		 * therefore we can safely process the record in a different
 		 * amount of time if it's too short to possibly contain a MAC.
 		 */
-		if (rr->orig_len < mac_size ||
+		if (orig_len < mac_size ||
 		    /* CBC records must have a padding length byte too. */
 		    (EVP_CIPHER_CTX_mode(s->enc_read_ctx) == EVP_CIPH_CBC_MODE &&
-		     rr->orig_len < mac_size+1))
+		     orig_len < mac_size+1))
 			{
 			al=SSL_AD_DECODE_ERROR;
 			SSLerr(SSL_F_DTLS1_PROCESS_RECORD,SSL_R_LENGTH_TOO_SHORT);
@@ -417,12 +419,12 @@ printf("\n");
 			 * without leaking the contents of the padding bytes.
 			 * */
 			mac = mac_tmp;
-			ssl3_cbc_copy_mac(mac_tmp, rr, mac_size);
+			ssl3_cbc_copy_mac(mac_tmp, rr, mac_size, orig_len);
 			rr->length -= mac_size;
 			}
 		else
 			{
-			/* In this case there's no padding, so |rec->orig_len|
+			/* In this case there's no padding, so |orig_len|
 			 * equals |rec->length| and we checked that there's
 			 * enough bytes for |mac_size| above. */
 			rr->length -= mac_size;
@@ -772,6 +774,12 @@ start:
 			}
 		}
 
+	if (s->d1->listen && rr->type != SSL3_RT_HANDSHAKE)
+		{
+		rr->length = 0;
+		goto start;
+		}
+
 	/* we now have a packet which can be read and processed */
 
 	if (s->s3->change_cipher_spec /* set when we receive ChangeCipherSpec,
@@ -938,6 +946,7 @@ start:
 			!(s->s3->flags & SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS) &&
 			!s->s3->renegotiate)
 			{
+			s->d1->handshake_read_seq++;
 			ssl3_renegotiate(s);
 			if (ssl3_renegotiate_check(s))
 				{

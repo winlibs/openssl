@@ -689,7 +689,7 @@ int tls1_mac(SSL *ssl, unsigned char *md, int send)
 	SSL3_RECORD *rec;
 	unsigned char *mac_sec,*seq;
 	const EVP_MD *hash;
-	size_t md_size;
+	size_t md_size, orig_len;
 	int i;
 	HMAC_CTX hmac;
 	unsigned char header[13];
@@ -727,6 +727,10 @@ int tls1_mac(SSL *ssl, unsigned char *md, int send)
 	else
 		memcpy(header, seq, 8);
 
+	/* kludge: tls1_cbc_remove_padding passes padding length in rec->type */
+	orig_len = rec->length+md_size+((unsigned int)rec->type>>8);
+	rec->type &= 0xff;
+
 	header[8]=rec->type;
 	header[9]=(unsigned char)(ssl->version>>8);
 	header[10]=(unsigned char)(ssl->version);
@@ -745,7 +749,7 @@ int tls1_mac(SSL *ssl, unsigned char *md, int send)
 		        hash,
 			md, &md_size,
 			header, rec->input,
-			rec->length + md_size, rec->orig_len,
+			rec->length + md_size, orig_len,
 			ssl->s3->read_mac_secret,
 			EVP_MD_size(ssl->read_hash),
 			0 /* not SSLv3 */);
@@ -764,20 +768,16 @@ int tls1_mac(SSL *ssl, unsigned char *md, int send)
 	    				ssl->enc_read_ctx,
 					hash,
 					&hmac, rec->input,
-					rec->length, rec->orig_len);
+					rec->length, orig_len);
 #endif
 		}
 		
 	HMAC_CTX_cleanup(&hmac);
 #ifdef TLS_DEBUG
-printf("sec=");
-{unsigned int z; for (z=0; z<md_size; z++) printf("%02X ",mac_sec[z]); printf("\n"); }
 printf("seq=");
 {int z; for (z=0; z<8; z++) printf("%02X ",seq[z]); printf("\n"); }
-printf("buf=");
-{int z; for (z=0; z<5; z++) printf("%02X ",buf[z]); printf("\n"); }
 printf("rec=");
-{unsigned int z; for (z=0; z<rec->length; z++) printf("%02X ",buf[z]); printf("\n"); }
+{unsigned int z; for (z=0; z<rec->length; z++) printf("%02X ",rec->data[z]); printf("\n"); }
 #endif
 
 	if ( SSL_version(ssl) != DTLS1_VERSION && SSL_version(ssl) != DTLS1_BAD_VER)
@@ -849,6 +849,12 @@ int tls1_alert_code(int code)
 	case SSL_AD_INTERNAL_ERROR:	return(TLS1_AD_INTERNAL_ERROR);
 	case SSL_AD_USER_CANCELLED:	return(TLS1_AD_USER_CANCELLED);
 	case SSL_AD_NO_RENEGOTIATION:	return(TLS1_AD_NO_RENEGOTIATION);
+	case SSL_AD_UNSUPPORTED_EXTENSION: return(TLS1_AD_UNSUPPORTED_EXTENSION);
+	case SSL_AD_CERTIFICATE_UNOBTAINABLE: return(TLS1_AD_CERTIFICATE_UNOBTAINABLE);
+	case SSL_AD_UNRECOGNIZED_NAME:	return(TLS1_AD_UNRECOGNIZED_NAME);
+	case SSL_AD_BAD_CERTIFICATE_STATUS_RESPONSE: return(TLS1_AD_BAD_CERTIFICATE_STATUS_RESPONSE);
+	case SSL_AD_BAD_CERTIFICATE_HASH_VALUE: return(TLS1_AD_BAD_CERTIFICATE_HASH_VALUE);
+	case SSL_AD_UNKNOWN_PSK_IDENTITY:return(TLS1_AD_UNKNOWN_PSK_IDENTITY);
 #ifdef DTLS1_AD_MISSING_HANDSHAKE_MESSAGE
 	case DTLS1_AD_MISSING_HANDSHAKE_MESSAGE: return 
 					  (DTLS1_AD_MISSING_HANDSHAKE_MESSAGE);
