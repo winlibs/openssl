@@ -77,9 +77,7 @@ const char *SSLeay_version(int t)
 	if (t == SSLEAY_CFLAGS)
 		{
 #ifdef CFLAGS
-		static char buf[sizeof(CFLAGS)+11];
-		BIO_snprintf(buf,sizeof buf,"compiler: %s",CFLAGS);
-		return(buf);
+		return(CFLAGS);
 #else
 		return("compiler: information not available");
 #endif
