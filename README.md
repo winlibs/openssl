@@ -1,6 +1,6 @@
 # OpenSSL Windows, How to compile
 
-## Building OpenSSL 0.9.8
+## Building OpenSSL 1.0.2
 
 ### Requirements
 
@@ -15,31 +15,20 @@
 Configure for Win32
 
     
-    cd  C:\phpbuild\libs\openssl-0.9.8k
-    perl Configure --openssldir=C:/phpbuild/apps_install/ VC-WIN32
+    cd  C:\phpbuild\libs\openssl-1.0.2d
+    perl Configure --openssldir=c:/usr/local/ssl VC-WIN32
 
 Configure for Win64
 
     
-    cd  C:\phpbuild\libs\openssl-0.9.8k
-    perl Configure --openssldir=C:/phpbuild/apps_install/ VC-WIN64A
+    cd  C:\phpbuild\libs\openssl-1.0.2d
+    perl Configure --openssldir=c:/usr/local/ssl VC-WIN64A
 
 The configure will prepare the sources to compile OpenSSL for windows 32bit
-and install it under c:\phpbuilds\apps.
+and install it under c:/usr/local/ssl.
 
 Modify the path using your configurations. Please note the unix directory
 separators / instead of the Windows backslash \.
-
-The following steps are only for 0.9.8k, later versions have been fixed.
-
-    
-    The headers are not compatible with VC9 which seems to be more picky. The openssl/ossl_typ.h header has a forward typedef that reads:
-    
-    typedef struct ocsp_response_st OCSP_RESPONSE;
-    
-    ocsp_response_st is defined in openssl/ocsp.h, this typedef has to be move there.
-    
-    bufferoverflowu.lib is also not present anymore (not needed) in VC9. Comment out the reference in the util/pl/VC-32.pl script on line 142, 276 and 286.
 
 #### Assembly languages options
 
@@ -47,8 +36,6 @@ PHP build default in 5.2 don't use ASM. PHP build default in 5.3 and later
 uses ASM.
 
     
-    For 0.9.8k you have to modify  the file crypto\perlasm\x86ms.pl. On the line 273 remove "$extra".
-
 For Win64 builds, use only:
 
     
@@ -121,10 +108,10 @@ or
 
 if you built the static library.
 
-### Copy OpenSSL 0.9.8 development files in the PHP SDK
+### Copy OpenSSL 1.0.2 development files in the PHP SDK
 
 To be done
 
-### Copy OpenSSL 0.9.8 in the PHP release Template
+### Copy OpenSSL 1.0.2 in the PHP release Template
 
 To be done
