@@ -12,7 +12,7 @@
 
 ### Configure
 
-** It is important to always keep the prefix path as c:/usr/local/ssl. It is the documented default config path in PHP, so it has to be the same in every OpenSSL build**
+**It is important to always keep the prefix path as c:/usr/local/ssl. It is the documented default config path in PHP, so it has to be the same in every OpenSSL build**
 
 Configure for Win32
 
