@@ -16,13 +16,13 @@ Configure for Win32
 
     
     cd  C:\phpbuild\libs\openssl-1.0.2d
-    perl Configure --openssldir=c:/usr/local/ssl VC-WIN32
+    perl Configure --openssldir=c:/usr/local/ssl enable-static-engine VC-WIN32
 
 Configure for Win64
 
     
     cd  C:\phpbuild\libs\openssl-1.0.2d
-    perl Configure --openssldir=c:/usr/local/ssl VC-WIN64A
+    perl Configure --openssldir=c:/usr/local/ssl enable-static-engine VC-WIN64A
 
 The configure will prepare the sources to compile OpenSSL for windows 32bit
 and install it under c:/usr/local/ssl.
