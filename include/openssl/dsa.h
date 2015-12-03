@@ -1,1 +1,1 @@
-../../crypto/dsa/dsa.h
+openssl-1.0.2e/../../crypto/dsa/dsa.h

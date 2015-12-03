@@ -1,1 +1,1 @@
-../../crypto/comp/comp.h
+openssl-1.0.2e/../../crypto/comp/comp.h

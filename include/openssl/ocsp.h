@@ -1,1 +1,1 @@
-../../crypto/ocsp/ocsp.h
+openssl-1.0.2e/../../crypto/ocsp/ocsp.h

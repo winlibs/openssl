@@ -1,1 +1,1 @@
-../../crypto/idea/idea.h
+openssl-1.0.2e/../../crypto/idea/idea.h

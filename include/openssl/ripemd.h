@@ -1,1 +1,1 @@
-../../crypto/ripemd/ripemd.h
+openssl-1.0.2e/../../crypto/ripemd/ripemd.h

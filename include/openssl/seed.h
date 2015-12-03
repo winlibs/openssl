@@ -1,1 +1,1 @@
-../../crypto/seed/seed.h
+openssl-1.0.2e/../../crypto/seed/seed.h

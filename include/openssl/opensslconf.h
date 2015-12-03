@@ -1,1 +1,1 @@
-../../crypto/opensslconf.h
+openssl-1.0.2e/../../crypto/opensslconf.h

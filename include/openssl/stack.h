@@ -1,1 +1,1 @@
-../../crypto/stack/stack.h
+openssl-1.0.2e/../../crypto/stack/stack.h
