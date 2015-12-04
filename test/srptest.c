@@ -1,1 +1,1 @@
-../crypto/srp/srptest.c
+openssl-1.0.1q/../crypto/srp/srptest.c

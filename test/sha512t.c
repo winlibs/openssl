@@ -1,1 +1,1 @@
-../crypto/sha/sha512t.c
+openssl-1.0.1q/../crypto/sha/sha512t.c

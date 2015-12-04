@@ -1,1 +1,1 @@
-../crypto/ecdh/ecdhtest.c
+openssl-1.0.1q/../crypto/ecdh/ecdhtest.c
