@@ -1,1 +1,0 @@
-openssl-1.0.1q/../crypto/mdc2/mdc2test.c
