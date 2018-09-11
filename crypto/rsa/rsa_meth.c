@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the OpenSSL license (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -75,7 +75,7 @@ int RSA_meth_set1_name(RSA_METHOD *meth, const char *name)
     return 1;
 }
 
-int RSA_meth_get_flags(RSA_METHOD *meth)
+int RSA_meth_get_flags(const RSA_METHOD *meth)
 {
     return meth->flags;
 }
@@ -271,3 +271,17 @@ int RSA_meth_set_keygen(RSA_METHOD *meth,
     return 1;
 }
 
+int (*RSA_meth_get_multi_prime_keygen(const RSA_METHOD *meth))
+    (RSA *rsa, int bits, int primes, BIGNUM *e, BN_GENCB *cb)
+{
+    return meth->rsa_multi_prime_keygen;
+}
+
+int RSA_meth_set_multi_prime_keygen(RSA_METHOD *meth,
+                                    int (*keygen) (RSA *rsa, int bits,
+                                                   int primes, BIGNUM *e,
+                                                   BN_GENCB *cb))
+{
+    meth->rsa_multi_prime_keygen = keygen;
+    return 1;
+}
