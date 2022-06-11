@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -630,7 +630,7 @@ static int has_san_id(X509 *x, int gtype)
     GENERAL_NAMES *gs = X509_get_ext_d2i(x, NID_subject_alt_name, NULL, NULL);
 
     if (gs == NULL)
-        return -1;
+        return 0;
 
     for (i = 0; i < sk_GENERAL_NAME_num(gs); i++) {
         GENERAL_NAME *g = sk_GENERAL_NAME_value(gs, i);
@@ -2230,6 +2230,12 @@ int X509_STORE_CTX_purpose_inherit(X509_STORE_CTX *ctx, int def_purpose,
     /* If purpose not set use default */
     if (purpose == 0)
         purpose = def_purpose;
+    /*
+     * If purpose is set but we don't have a default then set the default to
+     * the current purpose
+     */
+    else if (def_purpose == 0)
+        def_purpose = purpose;
     /* If we have a purpose then check it is valid */
     if (purpose != 0) {
         X509_PURPOSE *ptmp;
@@ -2242,11 +2248,6 @@ int X509_STORE_CTX_purpose_inherit(X509_STORE_CTX *ctx, int def_purpose,
         ptmp = X509_PURPOSE_get0(idx);
         if (ptmp->trust == X509_TRUST_DEFAULT) {
             idx = X509_PURPOSE_get_by_id(def_purpose);
-            /*
-             * XXX: In the two callers above def_purpose is always 0, which is
-             * not a known value, so idx will always be -1.  How is the
-             * X509_TRUST_DEFAULT case actually supposed to be handled?
-             */
             if (idx == -1) {
                 ERR_raise(ERR_LIB_X509, X509_R_UNKNOWN_PURPOSE_ID);
                 return 0;
@@ -3023,20 +3024,24 @@ static int build_chain(X509_STORE_CTX *ctx)
         may_trusted = 1;
     }
 
-    /*
-     * Shallow-copy the stack of untrusted certificates (with TLS, this is
-     * typically the content of the peer's certificate message) so can make
-     * multiple passes over it, while free to remove elements as we go.
-     */
-    if ((sk_untrusted = sk_X509_dup(ctx->untrusted)) == NULL)
+    /* Initialize empty untrusted stack. */
+    if ((sk_untrusted = sk_X509_new_null()) == NULL)
         goto memerr;
 
     /*
-     * If we got any "DANE-TA(2) Cert(0) Full(0)" trust anchors from DNS, add
-     * them to our working copy of the untrusted certificate stack.
+     * If we got any "Cert(0) Full(0)" trust anchors from DNS, *prepend* them
+     * to our working copy of the untrusted certificate stack.
      */
     if (DANETLS_ENABLED(dane) && dane->certs != NULL
         && !X509_add_certs(sk_untrusted, dane->certs, X509_ADD_FLAG_DEFAULT))
+        goto memerr;
+
+    /*
+     * Shallow-copy the stack of untrusted certificates (with TLS, this is
+     * typically the content of the peer's certificate message) so we can make
+     * multiple passes over it, while free to remove elements as we go.
+     */
+    if (!X509_add_certs(sk_untrusted, ctx->untrusted, X509_ADD_FLAG_DEFAULT))
         goto memerr;
 
     /*
@@ -3227,7 +3232,7 @@ static int build_chain(X509_STORE_CTX *ctx)
             if (!ossl_assert(num == ctx->num_untrusted))
                 goto int_err;
             curr = sk_X509_value(ctx->chain, num - 1);
-            issuer = (X509_self_signed(curr, 0) || num > max_depth) ?
+            issuer = (X509_self_signed(curr, 0) > 0 || num > max_depth) ?
                 NULL : find_issuer(ctx, sk_untrusted, curr);
             if (issuer == NULL) {
                 /*
@@ -3298,7 +3303,7 @@ static int build_chain(X509_STORE_CTX *ctx)
         CB_FAIL_IF(DANETLS_ENABLED(dane)
                        && (!DANETLS_HAS_PKIX(dane) || dane->pdpth >= 0),
                    ctx, NULL, num - 1, X509_V_ERR_DANE_NO_MATCH);
-        if (X509_self_signed(sk_X509_value(ctx->chain, num - 1), 0))
+        if (X509_self_signed(sk_X509_value(ctx->chain, num - 1), 0) > 0)
             return verify_cb_cert(ctx, NULL, num - 1,
                                   num == 1
                                   ? X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT

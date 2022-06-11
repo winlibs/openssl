@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -1267,6 +1267,8 @@ static const SIGALG_LOOKUP *tls1_get_legacy_sigalg(const SSL *s, int idx)
             for (i = 0; i < SSL_PKEY_NUM; i++) {
                 const SSL_CERT_LOOKUP *clu = ssl_cert_lookup_by_idx(i);
 
+                if (clu == NULL)
+                    continue;
                 if (clu->amask & s->s3.tmp.new_cipher->algorithm_auth) {
                     idx = i;
                     break;
@@ -3474,4 +3476,23 @@ int ssl_get_EC_curve_nid(const EVP_PKEY *pkey)
         return OBJ_txt2nid(gname);
 
     return NID_undef;
+}
+
+__owur int tls13_set_encoded_pub_key(EVP_PKEY *pkey,
+                                     const unsigned char *enckey,
+                                     size_t enckeylen)
+{
+    if (EVP_PKEY_is_a(pkey, "DH")) {
+        int bits = EVP_PKEY_get_bits(pkey);
+
+        if (bits <= 0 || enckeylen != (size_t)bits / 8)
+            /* the encoded key must be padded to the length of the p */
+            return 0;
+    } else if (EVP_PKEY_is_a(pkey, "EC")) {
+        if (enckeylen < 3 /* point format and at least 1 byte for x and y */
+            || enckey[0] != 0x04)
+            return 0;
+    }
+
+    return EVP_PKEY_set1_encoded_public_key(pkey, enckey, enckeylen);
 }

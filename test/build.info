@@ -37,7 +37,7 @@ IF[{- !$disabled{tests} -}]
           sanitytest rsa_complex exdatatest bntest \
           ecstresstest gmdifftest pbelutest \
           destest mdc2test sha_test \
-          exptest pbetest \
+          exptest pbetest localetest evp_pkey_ctx_new_from_name\
           evp_pkey_provided_test evp_test evp_extra_test evp_extra_test2 \
           evp_fetch_prov_test evp_libctx_test ossl_store_test \
           v3nametest v3ext \
@@ -62,7 +62,7 @@ IF[{- !$disabled{tests} -}]
           context_internal_test aesgcmtest params_test evp_pkey_dparams_test \
           keymgmt_internal_test hexstr_test provider_status_test defltfips_test \
           bio_readbuffer_test user_property_test pkcs7_test upcallstest \
-          provfetchtest prov_config_test
+          provfetchtest prov_config_test rand_test
 
   IF[{- !$disabled{'deprecated-3.0'} -}]
     PROGRAMS{noinst}=enginetest
@@ -83,6 +83,10 @@ IF[{- !$disabled{tests} -}]
   SOURCE[sanitytest]=sanitytest.c
   INCLUDE[sanitytest]=../include ../apps/include
   DEPEND[sanitytest]=../libcrypto libtestutil.a
+
+  SOURCE[rand_test]=rand_test.c
+  INCLUDE[rand_test]=../include ../apps/include
+  DEPEND[rand_test]=../libcrypto libtestutil.a
 
   SOURCE[rsa_complex]=rsa_complex.c
   INCLUDE[rsa_complex]=../include ../apps/include
@@ -130,6 +134,14 @@ IF[{- !$disabled{tests} -}]
   SOURCE[exptest]=exptest.c
   INCLUDE[exptest]=../include ../apps/include
   DEPEND[exptest]=../libcrypto libtestutil.a
+
+  SOURCE[localetest]=localetest.c
+  INCLUDE[localetest]=../include ../apps/include
+  DEPEND[localetest]=../libcrypto libtestutil.a
+
+  SOURCE[evp_pkey_ctx_new_from_name]=evp_pkey_ctx_new_from_name.c
+  INCLUDE[evp_pkey_ctx_new_from_name]=../include ../apps/include
+  DEPEND[evp_pkey_ctx_new_from_name]=../libcrypto
 
   SOURCE[pbetest]=pbetest.c
   INCLUDE[pbetest]=../include ../apps/include
@@ -839,6 +851,11 @@ IF[{- !$disabled{tests} -}]
   SOURCE[provider_fallback_test]=provider_fallback_test.c
   INCLUDE[provider_fallback_test]=../include ../apps/include
   DEPEND[provider_fallback_test]=../libcrypto libtestutil.a
+
+  PROGRAMS{noinst}=provider_pkey_test
+  SOURCE[provider_pkey_test]=provider_pkey_test.c fake_rsaprov.c
+  INCLUDE[provider_pkey_test]=../include ../apps/include
+  DEPEND[provider_pkey_test]=../libcrypto libtestutil.a
 
   PROGRAMS{noinst}=params_test
   SOURCE[params_test]=params_test.c

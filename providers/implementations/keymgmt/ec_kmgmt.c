@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -13,7 +13,6 @@
  */
 #include "internal/deprecated.h"
 
-#include "e_os.h" /* strcasecmp */
 #include <string.h>
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
@@ -337,17 +336,29 @@ static int ec_match(const void *keydata1, const void *keydata2, int selection)
     if ((selection & OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS) != 0)
         ok = ok && group_a != NULL && group_b != NULL
             && EC_GROUP_cmp(group_a, group_b, ctx) == 0;
-    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
-        const BIGNUM *pa = EC_KEY_get0_private_key(ec1);
-        const BIGNUM *pb = EC_KEY_get0_private_key(ec2);
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0) {
+        int key_checked = 0;
 
-        ok = ok && BN_cmp(pa, pb) == 0;
-    }
-    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
-        const EC_POINT *pa = EC_KEY_get0_public_key(ec1);
-        const EC_POINT *pb = EC_KEY_get0_public_key(ec2);
+        if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
+            const EC_POINT *pa = EC_KEY_get0_public_key(ec1);
+            const EC_POINT *pb = EC_KEY_get0_public_key(ec2);
 
-        ok = ok && EC_POINT_cmp(group_b, pa, pb, ctx) == 0;
+            if (pa != NULL && pb != NULL) {
+                ok = ok && EC_POINT_cmp(group_b, pa, pb, ctx) == 0;
+                key_checked = 1;
+            }
+        }
+        if (!key_checked
+            && (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
+            const BIGNUM *pa = EC_KEY_get0_private_key(ec1);
+            const BIGNUM *pb = EC_KEY_get0_private_key(ec2);
+
+            if (pa != NULL && pb != NULL) {
+                ok = ok && BN_cmp(pa, pb) == 0;
+                key_checked = 1;
+            }
+        }
+        ok = ok && key_checked;
     }
     BN_CTX_free(ctx);
     return ok;
@@ -457,9 +468,6 @@ int ec_export(void *keydata, int selection, OSSL_CALLBACK *param_cb,
         return 0;
     if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0
             && (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) == 0)
-        return 0;
-    if ((selection & OSSL_KEYMGMT_SELECT_OTHER_PARAMETERS) != 0
-            && (selection & OSSL_KEYMGMT_SELECT_KEYPAIR) == 0)
         return 0;
 
     tmpl = OSSL_PARAM_BLD_new();
