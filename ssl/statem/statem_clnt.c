@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  * Copyright 2005 Nokia. All rights reserved.
  *
@@ -27,6 +27,7 @@
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
 #include "internal/cryptlib.h"
+#include "internal/comp.h"
 
 static MSG_PROCESS_RETURN tls_process_as_hello_retry_request(SSL_CONNECTION *s,
                                                              PACKET *pkt);
@@ -871,20 +872,16 @@ WORK_STATE ossl_statem_client_post_work(SSL_CONNECTION *s, WORK_STATE wst)
             return WORK_ERROR;
         }
 
-        if (SSL_CONNECTION_IS_DTLS(s)) {
 #ifndef OPENSSL_NO_SCTP
-            if (s->hit) {
-                /*
-                 * Change to new shared key of SCTP-Auth, will be ignored if
-                 * no SCTP used.
-                 */
-                BIO_ctrl(SSL_get_wbio(ssl), BIO_CTRL_DGRAM_SCTP_NEXT_AUTH_KEY,
-                         0, NULL);
-            }
-#endif
-
-            dtls1_increment_epoch(s, SSL3_CC_WRITE);
+        if (SSL_CONNECTION_IS_DTLS(s) && s->hit) {
+            /*
+            * Change to new shared key of SCTP-Auth, will be ignored if
+            * no SCTP used.
+            */
+            BIO_ctrl(SSL_get_wbio(ssl), BIO_CTRL_DGRAM_SCTP_NEXT_AUTH_KEY,
+                     0, NULL);
         }
+#endif
         break;
 
     case TLS_ST_CW_FINISHED:
@@ -1427,6 +1424,10 @@ static int set_client_ciphersuite(SSL_CONNECTION *s,
         if (SSL_CONNECTION_IS_TLS13(s)) {
             const EVP_MD *md = ssl_md(sctx, c->algorithm2);
 
+            if (!ossl_assert(s->session->cipher != NULL)) {
+                SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+                return 0;
+            }
             /*
              * In TLSv1.3 it is valid for the server to select a different
              * ciphersuite as long as the hash is the same.
@@ -1885,7 +1886,7 @@ static MSG_PROCESS_RETURN tls_process_as_hello_retry_request(SSL_CONNECTION *s,
 
 MSG_PROCESS_RETURN tls_process_server_rpk(SSL_CONNECTION *sc, PACKET *pkt)
 {
-    EVP_PKEY *peer_rpk;
+    EVP_PKEY *peer_rpk = NULL;
 
     if (!tls_process_rpk(sc, pkt, &peer_rpk)) {
         /* SSLfatal() already called */
@@ -2698,7 +2699,7 @@ MSG_PROCESS_RETURN tls_process_new_session_ticket(SSL_CONNECTION *s,
             && (!PACKET_get_net_4(pkt, &age_add)
                 || !PACKET_get_length_prefixed_1(pkt, &nonce)))
         || !PACKET_get_net_2(pkt, &ticklen)
-        || (SSL_CONNECTION_IS_TLS13(s) ? (ticklen == 0 
+        || (SSL_CONNECTION_IS_TLS13(s) ? (ticklen == 0
                                           || PACKET_remaining(pkt) < ticklen)
                                        : PACKET_remaining(pkt) != ticklen)) {
         SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_LENGTH_MISMATCH);
@@ -2828,7 +2829,7 @@ MSG_PROCESS_RETURN tls_process_new_session_ticket(SSL_CONNECTION *s,
         static const unsigned char nonce_label[] = "resumption";
 
         /* Ensure cast to size_t is safe */
-        if (!ossl_assert(hashleni >= 0)) {
+        if (!ossl_assert(hashleni > 0)) {
             SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
             goto err;
         }
@@ -4064,8 +4065,9 @@ int ssl_cipher_list_to_bytes(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *sk,
     int i;
     size_t totlen = 0, len, maxlen, maxverok = 0;
     int empty_reneg_info_scsv = !s->renegotiate
-                                && (SSL_CONNECTION_IS_DTLS(s)
-                                    || s->min_proto_version < TLS1_3_VERSION);
+                                && !SSL_CONNECTION_IS_DTLS(s)
+                                && ssl_security(s, SSL_SECOP_VERSION, 0, TLS1_VERSION, NULL)
+                                && s->min_proto_version <= TLS1_VERSION;
     SSL *ssl = SSL_CONNECTION_GET_SSL(s);
 
     /* Set disabled masks for this session */
@@ -4115,15 +4117,12 @@ int ssl_cipher_list_to_bytes(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *sk,
 
         /* Sanity check that the maximum version we offer has ciphers enabled */
         if (!maxverok) {
-            if (SSL_CONNECTION_IS_DTLS(s)) {
-                if (DTLS_VERSION_GE(c->max_dtls, s->s3.tmp.max_ver)
-                        && DTLS_VERSION_LE(c->min_dtls, s->s3.tmp.max_ver))
-                    maxverok = 1;
-            } else {
-                if (c->max_tls >= s->s3.tmp.max_ver
-                        && c->min_tls <= s->s3.tmp.max_ver)
-                    maxverok = 1;
-            }
+            int minproto = SSL_CONNECTION_IS_DTLS(s) ? c->min_dtls : c->min_tls;
+            int maxproto = SSL_CONNECTION_IS_DTLS(s) ? c->max_dtls : c->max_tls;
+
+            if (ssl_version_cmp(s, maxproto, s->s3.tmp.max_ver) >= 0
+                    && ssl_version_cmp(s, minproto, s->s3.tmp.max_ver) <= 0)
+                maxverok = 1;
         }
 
         totlen += len;
@@ -4142,7 +4141,7 @@ int ssl_cipher_list_to_bytes(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *sk,
 
     if (totlen != 0) {
         if (empty_reneg_info_scsv) {
-            static SSL_CIPHER scsv = {
+            static const SSL_CIPHER scsv = {
                 0, NULL, NULL, SSL3_CK_SCSV, 0, 0, 0, 0, 0, 0, 0, 0, 0
             };
             if (!ssl->method->put_cipher_by_char(&scsv, pkt, &len)) {
@@ -4151,7 +4150,7 @@ int ssl_cipher_list_to_bytes(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *sk,
             }
         }
         if (s->mode & SSL_MODE_SEND_FALLBACK_SCSV) {
-            static SSL_CIPHER scsv = {
+            static const SSL_CIPHER scsv = {
                 0, NULL, NULL, SSL3_CK_FALLBACK_SCSV, 0, 0, 0, 0, 0, 0, 0, 0, 0
             };
             if (!ssl->method->put_cipher_by_char(&scsv, pkt, &len)) {

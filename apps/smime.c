@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1999-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -96,7 +96,10 @@ const OPTIONS smime_options[] = {
     {"nosigs", OPT_NOSIGS, '-', "Don't verify message signature"},
     {"noverify", OPT_NOVERIFY, '-', "Don't verify signers certificate"},
 
-    {"certfile", OPT_CERTFILE, '<', "Other certificates file"},
+    {"certfile", OPT_CERTFILE, '<',
+     "Extra signer and intermediate CA certificates to include when signing"},
+    {OPT_MORE_STR, 0, 0,
+     "or to use as preferred signer certs and for chain building when verifying"},
     {"recip", OPT_RECIP, '<', "Recipient certificate file for decryption"},
 
     OPT_SECTION("Email"),
@@ -118,7 +121,7 @@ const OPTIONS smime_options[] = {
      "Do not load certificates from the default certificates store"},
     {"nochain", OPT_NOCHAIN, '-',
      "set PKCS7_NOCHAIN so certificates contained in the message are not used as untrusted CAs" },
-    {"crlfeol", OPT_CRLFEOL, '-', "Use CRLF as EOL termination instead of CR only"},
+    {"crlfeol", OPT_CRLFEOL, '-', "Use CRLF as EOL termination instead of LF only"},
 
     OPT_R_OPTIONS,
     OPT_V_OPTIONS,

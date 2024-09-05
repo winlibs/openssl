@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2004-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -88,27 +88,31 @@ int SHA224_Final(unsigned char *md, SHA256_CTX *c)
 #define HASH_MAKE_STRING(c,s)   do {    \
         unsigned long ll;               \
         unsigned int  nn;               \
-        switch ((c)->md_len)            \
-        {   case SHA256_192_DIGEST_LENGTH: \
-                for (nn=0;nn<SHA256_192_DIGEST_LENGTH/4;nn++)   \
-                {   ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));   }  \
+        switch ((c)->md_len) {          \
+            case SHA256_192_DIGEST_LENGTH: \
+                for (nn=0;nn<SHA256_192_DIGEST_LENGTH/4;nn++) { \
+                    ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));      \
+                }                       \
                 break;                  \
             case SHA224_DIGEST_LENGTH:  \
-                for (nn=0;nn<SHA224_DIGEST_LENGTH/4;nn++)       \
-                {   ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));   }  \
+                for (nn=0;nn<SHA224_DIGEST_LENGTH/4;nn++) {     \
+                    ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));      \
+                }                       \
                 break;                  \
             case SHA256_DIGEST_LENGTH:  \
-                for (nn=0;nn<SHA256_DIGEST_LENGTH/4;nn++)       \
-                {   ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));   }  \
+                for (nn=0;nn<SHA256_DIGEST_LENGTH/4;nn++) {     \
+                    ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));      \
+                }                       \
                 break;                  \
             default:                    \
                 if ((c)->md_len > SHA256_DIGEST_LENGTH) \
                     return 0;                           \
-                for (nn=0;nn<(c)->md_len/4;nn++)                \
-                {   ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));   }  \
+                for (nn=0;nn<(c)->md_len/4;nn++) {              \
+                    ll=(c)->h[nn]; (void)HOST_l2c(ll,(s));      \
+                }                       \
                 break;                  \
         }                               \
-        } while (0)
+    } while (0)
 
 #define HASH_UPDATE             SHA256_Update
 #define HASH_TRANSFORM          SHA256_Transform
@@ -116,12 +120,16 @@ int SHA224_Final(unsigned char *md, SHA256_CTX *c)
 #define HASH_BLOCK_DATA_ORDER   sha256_block_data_order
 #ifndef SHA256_ASM
 static
-#endif
+#else
+# ifdef INCLUDE_C_SHA256
+void sha256_block_data_order_c(SHA256_CTX *ctx, const void *in, size_t num);
+# endif /* INCLUDE_C_SHA256 */
+#endif /* SHA256_ASM */
 void sha256_block_data_order(SHA256_CTX *ctx, const void *in, size_t num);
 
 #include "crypto/md32_common.h"
 
-#ifndef SHA256_ASM
+#if !defined(SHA256_ASM) || defined(INCLUDE_C_SHA256)
 static const SHA_LONG K256[64] = {
     0x428a2f98UL, 0x71374491UL, 0xb5c0fbcfUL, 0xe9b5dba5UL,
     0x3956c25bUL, 0x59f111f1UL, 0x923f82a4UL, 0xab1c5ed5UL,
@@ -279,8 +287,12 @@ static void sha256_block_data_order(SHA256_CTX *ctx, const void *in,
         T1 = X[(i)&0x0f] += s0 + s1 + X[(i+9)&0x0f];    \
         ROUND_00_15(i,a,b,c,d,e,f,g,h);         } while (0)
 
+#ifdef INCLUDE_C_SHA256
+void sha256_block_data_order_c(SHA256_CTX *ctx, const void *in, size_t num)
+#else
 static void sha256_block_data_order(SHA256_CTX *ctx, const void *in,
                                     size_t num)
+#endif
 {
     unsigned MD32_REG_T a, b, c, d, e, f, g, h, s0, s1, T1;
     SHA_LONG X[16];

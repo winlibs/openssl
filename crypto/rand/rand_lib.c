@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -19,6 +19,10 @@
 #include "crypto/cryptlib.h"
 #include "rand_local.h"
 #include "crypto/context.h"
+
+#ifndef OPENSSL_DEFAULT_SEED_SRC
+# define OPENSSL_DEFAULT_SEED_SRC SEED-SRC
+#endif
 
 #ifndef FIPS_MODULE
 # include <stdio.h>
@@ -593,7 +597,7 @@ static EVP_RAND_CTX *rand_new_seed(OSSL_LIB_CTX *libctx)
                 propq = props;
             }
         }
-        name = "SEED-SRC";
+        name = OPENSSL_MSTR(OPENSSL_DEFAULT_SEED_SRC);
     }
 
     rand = EVP_RAND_fetch(libctx, name, propq);

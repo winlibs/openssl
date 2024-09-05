@@ -27,6 +27,7 @@
 #include <openssl/core_names.h>
 #include <openssl/asn1t.h>
 #include <openssl/comp.h>
+#include "internal/comp.h"
 
 #define TICKET_NONCE_SIZE       8
 
@@ -994,9 +995,6 @@ WORK_STATE ossl_statem_server_post_work(SSL_CONNECTION *s, WORK_STATE wst)
             /* SSLfatal() already called */
             return WORK_ERROR;
         }
-
-        if (SSL_CONNECTION_IS_DTLS(s))
-            dtls1_increment_epoch(s, SSL3_CC_WRITE);
         break;
 
     case TLS_ST_SW_SRVR_DONE:
@@ -1685,7 +1683,6 @@ static int tls_early_post_process_client_hello(SSL_CONNECTION *s)
     unsigned int j;
     int i, al = SSL_AD_INTERNAL_ERROR;
     int protverr;
-    size_t loop;
     unsigned long id;
 #ifndef OPENSSL_NO_COMP
     SSL_COMP *comp = NULL;
@@ -1734,18 +1731,9 @@ static int tls_early_post_process_client_hello(SSL_CONNECTION *s)
         /* SSLv3/TLS */
         s->client_version = clienthello->legacy_version;
     }
-    /*
-     * Do SSL/TLS version negotiation if applicable. For DTLS we just check
-     * versions are potentially compatible. Version negotiation comes later.
-     */
-    if (!SSL_CONNECTION_IS_DTLS(s)) {
-        protverr = ssl_choose_server_version(s, clienthello, &dgrd);
-    } else if (ssl->method->version != DTLS_ANY_VERSION &&
-               DTLS_VERSION_LT((int)clienthello->legacy_version, s->version)) {
-        protverr = SSL_R_VERSION_TOO_LOW;
-    } else {
-        protverr = 0;
-    }
+
+    /* Choose the server SSL/TLS/DTLS version. */
+    protverr = ssl_choose_server_version(s, clienthello, &dgrd);
 
     if (protverr) {
         if (SSL_IS_FIRST_HANDSHAKE(s)) {
@@ -1782,14 +1770,6 @@ static int tls_early_post_process_client_hello(SSL_CONNECTION *s)
                 goto err;
             }
             s->d1->cookie_verified = 1;
-        }
-        if (ssl->method->version == DTLS_ANY_VERSION) {
-            protverr = ssl_choose_server_version(s, clienthello, &dgrd);
-            if (protverr != 0) {
-                s->version = s->client_version;
-                SSLfatal(s, SSL_AD_PROTOCOL_VERSION, protverr);
-                goto err;
-            }
         }
     }
 
@@ -1943,14 +1923,16 @@ static int tls_early_post_process_client_hello(SSL_CONNECTION *s)
         OSSL_TRACE_END(TLS_CIPHER);
     }
 
-    for (loop = 0; loop < clienthello->compressions_len; loop++) {
-        if (clienthello->compressions[loop] == 0)
-            break;
-    }
-
-    if (loop >= clienthello->compressions_len) {
-        /* no compress */
+    /* At least one compression method must be preset. */
+    if (clienthello->compressions_len == 0) {
         SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_NO_COMPRESSION_SPECIFIED);
+        goto err;
+    }
+    /* Make sure at least the null compression is supported. */
+    if (memchr(clienthello->compressions, 0,
+               clienthello->compressions_len) == NULL) {
+        SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER,
+                 SSL_R_REQUIRED_COMPRESSION_ALGORITHM_MISSING);
         goto err;
     }
 
@@ -4194,7 +4176,7 @@ CON_FUNC_RETURN tls_construct_new_session_ticket(SSL_CONNECTION *s, WPACKET *pkt
         int hashleni = EVP_MD_get_size(md);
 
         /* Ensure cast to size_t is safe */
-        if (!ossl_assert(hashleni >= 0)) {
+        if (!ossl_assert(hashleni > 0)) {
             SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
             goto err;
         }

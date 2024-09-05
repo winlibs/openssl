@@ -1,4 +1,4 @@
-# Copyright 2021-2023 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2021-2024 The OpenSSL Project Authors. All Rights Reserved.
 # Copyright (c) 2021, Intel Corporation. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -2007,7 +2007,7 @@ sub INITIAL_BLOCKS_PARTIAL_GHASH {
   my $ZT8             = $_[20];    # [clobbered] ZMM temporary
   my $PBLOCK_LEN      = $_[21];    # [in] partial block length
   my $GH              = $_[22];    # [in] ZMM with hi product part
-  my $GM              = $_[23];    # [in] ZMM with mid prodcut part
+  my $GM              = $_[23];    # [in] ZMM with mid product part
   my $GL              = $_[24];    # [in] ZMM with lo product part
 
   my $label_suffix = $label_count++;
@@ -4812,7 +4812,7 @@ ___
 }
 
 $code .= <<___;
-.data
+.section .rodata align=16
 .align 16
 POLY:   .quad     0x0000000000000001, 0xC200000000000000
 

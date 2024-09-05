@@ -88,7 +88,7 @@ int bn_rshift_fixed_top(BIGNUM *r, const BIGNUM *a, int n);
 int bn_div_fixed_top(BIGNUM *dv, BIGNUM *rem, const BIGNUM *m,
                      const BIGNUM *d, BN_CTX *ctx);
 int ossl_bn_mask_bits_fixed_top(BIGNUM *a, int n);
-int ossl_bn_is_word_fixed_top(const BIGNUM *a, BN_ULONG w);
+int ossl_bn_is_word_fixed_top(const BIGNUM *a, const BN_ULONG w);
 int ossl_bn_priv_rand_range_fixed_top(BIGNUM *r, const BIGNUM *range,
                                       unsigned int strength, BN_CTX *ctx);
 int ossl_bn_gen_dsa_nonce_fixed_top(BIGNUM *out, const BIGNUM *range,
@@ -135,3 +135,9 @@ int s390x_crt(BIGNUM *r, const BIGNUM *i, const BIGNUM *p, const BIGNUM *q,
             const BIGNUM *dmp, const BIGNUM *dmq, const BIGNUM *iqmp);
 
 #endif
+
+int ossl_bn_mont_ctx_set(BN_MONT_CTX *ctx, const BIGNUM *modulus, int ri,
+                         const unsigned char *rr, size_t rrlen,
+                         uint32_t nlo, uint32_t nhi);
+
+int ossl_bn_mont_ctx_eq(const BN_MONT_CTX *m1, const BN_MONT_CTX *m2);

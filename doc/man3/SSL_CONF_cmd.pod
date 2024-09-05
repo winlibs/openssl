@@ -98,6 +98,12 @@ Only used by servers. Requires B<-serverpref>.
 In TLSv1.3 allow a non-(ec)dhe based key exchange mode on resumption. This means
 that there will be no forward secrecy for the resumed session.
 
+=item B<-prefer_no_dhe_kex>
+
+In TLSv1.3, on resumption let the server prefer a non-(ec)dhe based key
+exchange mode over an (ec)dhe based one. Requires B<-allow_no_dhe_kex>.
+Equivalent to B<SSL_OP_PREFER_NO_DHE_KEX>. Only used by servers.
+
 =item B<-strict>
 
 Enables strict mode protocol handling. Equivalent to setting
@@ -221,9 +227,15 @@ deprecated alternative commands below.
 
 =item B<-record_padding> I<padding>
 
-Attempts to pad TLSv1.3 records so that they are a multiple of B<padding>
-in length on send. A B<padding> of 0 or 1 turns off padding. Otherwise,
-the B<padding> must be >1 or <=16384.
+Controls use of TLSv1.3 record layer padding.  B<padding> is a string of the
+form "number[,number]" where the (required) first number is the padding block
+size (in octets) for application data, and the optional second number is the
+padding block size for handshake and alert messages.  If the optional second
+number is omitted, the same padding will be applied to all messages.
+
+Padding attempts to pad TLSv1.3 records so that they are a multiple of the set
+length on send. A value of 0 or 1 turns off padding as relevant. Otherwise, the
+values must be >1 or <=16384.
 
 =item B<-debug_broken_protocol>
 
@@ -353,9 +365,15 @@ operations are permitted.
 
 =item B<RecordPadding>
 
-Attempts to pad TLSv1.3 records so that they are a multiple of B<value> in
-length on send. A B<value> of 0 or 1 turns off padding. Otherwise, the
-B<value> must be >1 or <=16384.
+Controls use of TLSv1.3 record layer padding.  B<value> is a string of the form
+"number[,number]" where the (required) first number is the padding block size
+(in octets) for application data, and the optional second number is the padding
+block size for handshake and alert messages.  If the optional second number is
+omitted, the same padding will be applied to all messages.
+
+Padding attempts to pad TLSv1.3 records so that they are a multiple of the set
+length on send. A value of 0 or 1 turns off padding as relevant. Otherwise, the
+values must be >1 or <=16384.
 
 =item B<SignatureAlgorithms>
 
@@ -531,6 +549,11 @@ B<-EncryptThenMac> is the same as setting B<SSL_OP_NO_ENCRYPT_THEN_MAC>.
 B<AllowNoDHEKEX>: In TLSv1.3 allow a non-(ec)dhe based key exchange mode on
 resumption. This means that there will be no forward secrecy for the resumed
 session. Equivalent to B<SSL_OP_ALLOW_NO_DHE_KEX>.
+
+B<PreferNoDHEKEX>: In TLSv1.3, on resumption let the server prefer a
+non-(ec)dhe based key exchange mode over an (ec)dhe based one. Requires
+B<AllowNoDHEKEX>. Equivalent to B<SSL_OP_PREFER_NO_DHE_KEX>. Only used by
+servers.
 
 B<MiddleboxCompat>: If set then dummy Change Cipher Spec (CCS) messages are sent
 in TLSv1.3. This has the effect of making TLSv1.3 look more like TLSv1.2 so that
@@ -786,6 +809,8 @@ OpenSSL 3.0.
 
 The B<TxCertificateCompression> and B<RxCertificateCompression> options were
 added in OpenSSL 3.2.
+
+B<PreferNoDHEKEX> was added in OpenSSL 3.3.
 
 =head1 COPYRIGHT
 

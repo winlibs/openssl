@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -16,10 +16,37 @@ EXT_RETURN tls_construct_ctos_renegotiate(SSL_CONNECTION *s, WPACKET *pkt,
                                           unsigned int context, X509 *x,
                                           size_t chainidx)
 {
-    /* Add RI if renegotiating */
-    if (!s->renegotiate)
-        return EXT_RETURN_NOT_SENT;
+    if (!s->renegotiate) {
+        /* If not renegotiating, send an empty RI extension to indicate support */
 
+#if DTLS_MAX_VERSION_INTERNAL != DTLS1_2_VERSION
+# error Internal DTLS version error
+#endif
+
+        if (!SSL_CONNECTION_IS_DTLS(s)
+            && (s->min_proto_version >= TLS1_3_VERSION
+                || (ssl_security(s, SSL_SECOP_VERSION, 0, TLS1_VERSION, NULL)
+                    && s->min_proto_version <= TLS1_VERSION))) {
+            /*
+             * For TLS <= 1.0 SCSV is used instead, and for TLS 1.3 this
+             * extension isn't used at all.
+             */
+            return EXT_RETURN_NOT_SENT;
+        }
+
+
+        if (!WPACKET_put_bytes_u16(pkt, TLSEXT_TYPE_renegotiate)
+            || !WPACKET_start_sub_packet_u16(pkt)
+            || !WPACKET_put_bytes_u8(pkt, 0)
+            || !WPACKET_close(pkt)) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+            return EXT_RETURN_FAIL;
+        }
+
+        return EXT_RETURN_SENT;
+    }
+
+    /* Add a complete RI extension if renegotiating */
     if (!WPACKET_put_bytes_u16(pkt, TLSEXT_TYPE_renegotiate)
             || !WPACKET_start_sub_packet_u16(pkt)
             || !WPACKET_sub_memcpy_u8(pkt, s->s3.previous_client_finished,
@@ -952,8 +979,12 @@ EXT_RETURN tls_construct_ctos_padding(SSL_CONNECTION *s, WPACKET *pkt,
              * Add the fixed PSK overhead, the identity length and the binder
              * length.
              */
+            int md_size = EVP_MD_get_size(md);
+
+            if (md_size <= 0)
+                return EXT_RETURN_FAIL;
             hlen +=  PSK_PRE_BINDER_OVERHEAD + s->session->ext.ticklen
-                     + EVP_MD_get_size(md);
+                     + md_size;
         }
     }
 
@@ -992,7 +1023,8 @@ EXT_RETURN tls_construct_ctos_psk(SSL_CONNECTION *s, WPACKET *pkt,
 {
 #ifndef OPENSSL_NO_TLS1_3
     uint32_t agesec, agems = 0;
-    size_t reshashsize = 0, pskhashsize = 0, binderoffset, msglen;
+    size_t binderoffset, msglen;
+    int reshashsize = 0, pskhashsize = 0;
     unsigned char *resbinder = NULL, *pskbinder = NULL, *msgstart = NULL;
     const EVP_MD *handmd = NULL, *mdres = NULL, *mdpsk = NULL;
     int dores = 0;
@@ -1088,6 +1120,8 @@ EXT_RETURN tls_construct_ctos_psk(SSL_CONNECTION *s, WPACKET *pkt,
         agems += s->session->ext.tick_age_add;
 
         reshashsize = EVP_MD_get_size(mdres);
+        if (reshashsize <= 0)
+            goto dopsksess;
         s->ext.tick_identity++;
         dores = 1;
     }
@@ -1117,6 +1151,10 @@ EXT_RETURN tls_construct_ctos_psk(SSL_CONNECTION *s, WPACKET *pkt,
         }
 
         pskhashsize = EVP_MD_get_size(mdpsk);
+        if (pskhashsize <= 0) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_R_BAD_PSK);
+            return EXT_RETURN_FAIL;
+        }
     }
 
     /* Create the extension, but skip over the binder for now */
@@ -1560,8 +1598,8 @@ int tls_parse_stoc_npn(SSL_CONNECTION *s, PACKET *pkt, unsigned int context,
     if (sctx->ext.npn_select_cb(SSL_CONNECTION_GET_SSL(s),
                                 &selected, &selected_len,
                                 PACKET_data(pkt), PACKET_remaining(pkt),
-                                sctx->ext.npn_select_cb_arg) !=
-             SSL_TLSEXT_ERR_OK) {
+                                sctx->ext.npn_select_cb_arg) != SSL_TLSEXT_ERR_OK
+            || selected_len == 0) {
         SSLfatal(s, SSL_AD_HANDSHAKE_FAILURE, SSL_R_BAD_EXTENSION);
         return 0;
     }
@@ -1590,6 +1628,8 @@ int tls_parse_stoc_alpn(SSL_CONNECTION *s, PACKET *pkt, unsigned int context,
                         X509 *x, size_t chainidx)
 {
     size_t len;
+    PACKET confpkt, protpkt;
+    int valid = 0;
 
     /* We must have requested it. */
     if (!s->s3.alpn_sent) {
@@ -1608,6 +1648,28 @@ int tls_parse_stoc_alpn(SSL_CONNECTION *s, PACKET *pkt, unsigned int context,
         SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_BAD_EXTENSION);
         return 0;
     }
+
+    /* It must be a protocol that we sent */
+    if (!PACKET_buf_init(&confpkt, s->ext.alpn, s->ext.alpn_len)) {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+        return 0;
+    }
+    while (PACKET_get_length_prefixed_1(&confpkt, &protpkt)) {
+        if (PACKET_remaining(&protpkt) != len)
+            continue;
+        if (memcmp(PACKET_data(pkt), PACKET_data(&protpkt), len) == 0) {
+            /* Valid protocol found */
+            valid = 1;
+            break;
+        }
+    }
+
+    if (!valid) {
+        /* The protocol sent from the server does not match one we advertised */
+        SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_R_BAD_EXTENSION);
+        return 0;
+    }
+
     OPENSSL_free(s->s3.alpn_selected);
     s->s3.alpn_selected = OPENSSL_malloc(len);
     if (s->s3.alpn_selected == NULL) {

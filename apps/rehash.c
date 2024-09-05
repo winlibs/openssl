@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2013-2014 Timo Teräs <timo.teras@gmail.com>
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -140,7 +140,7 @@ static int add_entry(enum Type type, unsigned int hash, const char *filename,
     }
 
     for (ep = bp->first_entry; ep; ep = ep->next) {
-        if (digest && memcmp(digest, ep->digest, evpmdsize) == 0) {
+        if (digest && memcmp(digest, ep->digest, (size_t)evpmdsize) == 0) {
             BIO_printf(bio_err,
                        "%s: warning: skipping duplicate %s in %s\n",
                        opt_getprog(),
@@ -183,7 +183,7 @@ static int add_entry(enum Type type, unsigned int hash, const char *filename,
     if (need_symlink && !ep->need_symlink) {
         ep->need_symlink = 1;
         bp->num_needed++;
-        memcpy(ep->digest, digest, evpmdsize);
+        memcpy(ep->digest, digest, (size_t)evpmdsize);
     }
     return 0;
 }
@@ -266,7 +266,7 @@ static int do_file(const char *filename, const char *fullpath, enum Hash h)
 
     if (sk_X509_INFO_num(inf) != 1) {
         BIO_printf(bio_err,
-                   "%s: warning: skipping %s,"
+                   "%s: warning: skipping %s, "
                    "it does not contain exactly one certificate or CRL\n",
                    opt_getprog(), filename);
         /* This is not an error. */
@@ -552,6 +552,9 @@ int rehash_main(int argc, char **argv)
 
     evpmd = EVP_sha1();
     evpmdsize = EVP_MD_get_size(evpmd);
+
+    if (evpmdsize <= 0 || evpmdsize > EVP_MAX_MD_SIZE)
+        goto end;
 
     if (*argv != NULL) {
         while (*argv != NULL)

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2005 Nokia. All rights reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -113,13 +113,14 @@ int ssl3_change_cipher_state(SSL_CONNECTION *s, int which)
 
     p = s->s3.tmp.key_block;
     mdi = EVP_MD_get_size(md);
-    if (mdi < 0) {
+    if (mdi <= 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         goto err;
     }
     md_len = (size_t)mdi;
     key_len = EVP_CIPHER_get_key_length(ciph);
     iv_len = EVP_CIPHER_get_iv_length(ciph);
+
     if ((which == SSL3_CHANGE_CIPHER_CLIENT_WRITE) ||
         (which == SSL3_CHANGE_CIPHER_SERVER_READ)) {
         mac_secret = &(p[0]);
@@ -187,7 +188,7 @@ int ssl3_setup_key_block(SSL_CONNECTION *s)
 #endif
 
     num = EVP_MD_get_size(hash);
-    if (num < 0)
+    if (num <= 0)
         return 0;
 
     num = EVP_CIPHER_get_key_length(c) + num + EVP_CIPHER_get_iv_length(c);
@@ -374,7 +375,7 @@ int ssl3_generate_master_secret(SSL_CONNECTION *s, unsigned char *out,
                                 unsigned char *p,
                                 size_t len, size_t *secret_size)
 {
-    static const unsigned char *salt[3] = {
+    static const unsigned char *const salt[3] = {
 #ifndef CHARSET_EBCDIC
         (const unsigned char *)"A",
         (const unsigned char *)"BB",

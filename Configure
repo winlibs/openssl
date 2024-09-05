@@ -77,6 +77,10 @@ EOF
 #               Generic OpenSSL-style methods relating to this support
 #               are always compiled but return NULL if the hardware
 #               support isn't compiled.
+#
+# enable-demos  Enable the building of the example code in the demos directory
+# enable-h3demo Enable the http3 demo, which currently only links to the
+#               external nghttp3 library on unix platforms
 # no-hw         do not compile support for any crypto hardware.
 # [no-]threads  [don't] try to create a library that is suitable for
 #               multithreaded applications (default is "threads" if we
@@ -167,7 +171,6 @@ my @gcc_devteam_warn = qw(
     -Wshadow
     -Wformat
     -Wno-type-limits
-    -Wno-tautological-constant-out-of-range-compare
     -Wundef
     -Werror
     -Wmissing-prototypes
@@ -184,11 +187,11 @@ my @gcc_devteam_warn = qw(
 #       -Wextended-offsetof -- no, needed in CMS ASN1 code
 my @clang_devteam_warn = qw(
     -Wno-unknown-warning-option
-    -Wswitch-default
     -Wno-parentheses-equality
     -Wno-language-extension-token
     -Wno-extended-offsetof
     -Wno-missing-braces
+    -Wno-tautological-constant-out-of-range-compare
     -Wconditional-uninitialized
     -Wincompatible-pointer-types-discards-qualifiers
     -Wmissing-variable-declarations
@@ -385,6 +388,12 @@ if (defined env($local_config_envname)) {
     }
 }
 
+# Fail if no configuration is apparent
+if (!%table) {
+    print "Failed to find any os/compiler configurations. Please make sure the Configurations directory is included.\n";
+    &usage;
+}
+
 # Save away perl command information
 $config{perl_cmd} = $^X;
 $config{perl_version} = $Config{version};
@@ -437,6 +446,8 @@ my @disablables = (
     "crypto-mdebug",
     "ct",
     "default-thread-pool",
+    "demos",
+    "h3demo",
     "deprecated",
     "des",
     "devcryptoeng",
@@ -460,11 +471,13 @@ my @disablables = (
     "filenames",
     "fips",
     "fips-securitychecks",
+    "fips-post",
     "fuzz-afl",
     "fuzz-libfuzzer",
     "gost",
     "http",
     "idea",
+    "jitter",
     "ktls",
     "legacy",
     "loadereng",
@@ -480,11 +493,13 @@ my @disablables = (
     "ocsp",
     "padlockeng",
     "pic",
+    "pie",
     "pinshared",
     "poly1305",
     "posix-io",
     "psk",
     "quic",
+    "unstable-qlog",
     "rc2",
     "rc4",
     "rc5",
@@ -515,6 +530,7 @@ my @disablables = (
     "thread-pool",
     "threads",
     "tls",
+    "integrity-only-ciphers",
     "trace",
     "ts",
     "ubsan",
@@ -563,12 +579,16 @@ our %disabled = ( # "what"         => "comment"
                   "buildtest-c++"       => "default",
                   "crypto-mdebug"       => "default",
                   "crypto-mdebug-backtrace" => "default",
+                  "demos"               => "default",
+                  "h3demo"              => "default",
                   "devcryptoeng"        => "default",
                   "ec_nistp_64_gcc_128" => "default",
                   "egd"                 => "default",
                   "external-tests"      => "default",
                   "fuzz-afl"            => "default",
                   "fuzz-libfuzzer"      => "default",
+                  "pie"                 => "default",
+                  "jitter"              => "default",
                   "ktls"                => "default",
                   "md2"                 => "default",
                   "msan"                => "default",
@@ -591,7 +611,7 @@ our %disabled = ( # "what"         => "comment"
 my @disable_cascades = (
     # "what"            => [ "cascade", ... ]
     "bulk"              => [ "shared", "dso",
-                             "aria", "async", "autoload-config",
+                             "aria", "async", "atexit", "autoload-config",
                              "blake2", "bf", "camellia", "cast", "chacha",
                              "cmac", "cms", "cmp", "comp", "ct",
                              "des", "dgram", "dh", "dsa",
@@ -626,6 +646,7 @@ my @disable_cascades = (
     sub { 0 == scalar grep { !$disabled{$_} } @tls }
                         => [ "tls" ],
     "tls1_3"            => [ "quic" ],
+    "quic"              => [ "unstable-qlog" ],
 
     "crypto-mdebug"     => [ "crypto-mdebug-backtrace" ],
 
@@ -668,7 +689,7 @@ my @disable_cascades = (
 
     "cmp"               => [ "crmf" ],
 
-    "fips"              => [ "fips-securitychecks", "acvp-tests" ],
+    "fips"              => [ "fips-securitychecks", "fips-post", "acvp-tests" ],
 
     "threads"           => [ "thread-pool" ],
     "thread-pool"       => [ "default-thread-pool" ],
@@ -737,6 +758,7 @@ my %user = (
     RANLIB      => env('RANLIB'),
     RC          => env('RC') || env('WINDRES'),
     RCFLAGS     => [ env('RCFLAGS') || () ],
+    OBJCOPY     => undef,
     RM          => undef,
    );
 # Info about what "make variables" may be prefixed with the cross compiler
@@ -797,7 +819,7 @@ my %cmdvars = ();               # Stores FOO='blah' type arguments
 my %unsupported_options = ();
 my %deprecated_options = ();
 # If you change this, update apps/version.c
-my @known_seed_sources = qw(getrandom devrandom os egd none rdcpu librandom);
+my @known_seed_sources = qw(getrandom devrandom os egd none rdcpu);
 my @seed_sources = ();
 while (@argvcopy)
         {
@@ -927,6 +949,10 @@ while (@argvcopy)
                         {
                         delete $disabled{"brotli"};
                         }
+                elsif ($1 eq "pie")
+                        {
+                        delete $disabled{"pie"};
+                        }
                 elsif ($1 eq "zstd-dynamic")
                         {
                         delete $disabled{"zstd"};
@@ -996,6 +1022,14 @@ while (@argvcopy)
                 elsif (/^--openssldir=(.*)$/)
                         {
                         $config{openssldir}=$1;
+                        }
+                elsif (/^--with-jitter-include=(.*)$/)
+                        {
+                        $withargs{jitter_include}=$1;
+                        }
+                elsif (/^--with-jitter-lib=(.*)$/)
+                        {
+                        $withargs{jitter_lib}=$1;
                         }
                 elsif (/^--with-zlib-lib=(.*)$/)
                         {
@@ -1289,10 +1323,14 @@ if (scalar(grep { $_ eq 'none' } @seed_sources) > 0) {
 
 ============================== WARNING ===============================
 You have selected the --with-rand-seed=none option, which effectively
-disables automatic reseeding of the OpenSSL random generator.
+disables automatic reseeding of the OpenSSL SEED-SRC random generator.
 All operations depending on the random generator such as creating keys
 will not work unless the random generator is seeded manually by the
 application.
+
+Instead of manually seeding, a different random generator can be set
+at runtime in openssl.cnf or configured at build time with
+-DOPENSSL_DEFAULT_SEED_SRC.
 
 Please read the 'Note on random number generation' section in the
 INSTALL.md instructions and the RAND_DRBG(7) manual page for more
@@ -1304,6 +1342,11 @@ _____
 push @{$config{openssl_feature_defines}},
      map { (my $x = $_) =~ tr|[\-a-z]|[_A-Z]|; "OPENSSL_RAND_SEED_$x" }
         @seed_sources;
+
+my $provider_string = $disabled{"fips-post"} ? "non-compliant FIPS Provider" : "FIPS Provider";
+
+$config{FIPS_VENDOR} =
+    (defined $version{FIPS_VENDOR} ? "$version{FIPS_VENDOR} $provider_string for OpenSSL" : "OpenSSL $provider_string");
 
 # Backward compatibility?
 if ($target =~ m/^CygWin32(-.*)$/) {
@@ -1547,6 +1590,10 @@ unless($disabled{threads}) {
     push @{$config{openssl_feature_defines}}, "OPENSSL_THREADS";
 }
 
+if ($disabled{"unstable-qlog"}) {
+    $disabled{"qlog"} = 1;
+}
+
 my $no_shared_warn=0;
 if (($target{shared_target} // '') eq "")
         {
@@ -1646,7 +1693,7 @@ if (!$disabled{makedepend}) {
     disable('unavailable', 'makedepend') unless $config{makedep_scheme};
 }
 
-if (!$disabled{asm} && !$predefined_C{__MACH__} && $^O ne 'VMS') {
+if (!$disabled{asm} && !$predefined_C{__MACH__} && $^O ne 'VMS' && !$predefined_C{_AIX}) {
     # probe for -Wa,--noexecstack option...
     if ($predefined_C{__clang__}) {
         # clang has builtin assembler, which doesn't recognize --help,
@@ -3492,6 +3539,13 @@ sub absolutedir {
     # it will return an incorrect directory spec if the argument is a
     # directory that doesn't exist.
     if ($^O eq "VMS") {
+        return rel2abs($dir);
+    }
+
+    # realpath() on Windows seems to check if the directory actually exists,
+    # which isn't what is wanted here.  All we want to know is if a directory
+    # spec is absolute, not if it exists.
+    if ($^O eq "MSWin32") {
         return rel2abs($dir);
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -282,6 +282,7 @@ struct evp_md_st {
     OSSL_FUNC_digest_init_fn *dinit;
     OSSL_FUNC_digest_update_fn *dupdate;
     OSSL_FUNC_digest_final_fn *dfinal;
+    OSSL_FUNC_digest_squeeze_fn *dsqueeze;
     OSSL_FUNC_digest_digest_fn *digest;
     OSSL_FUNC_digest_freectx_fn *freectx;
     OSSL_FUNC_digest_dupctx_fn *dupctx;
@@ -395,13 +396,12 @@ static int cname##_ecb_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out, const uns
 #define BLOCK_CIPHER_func_cbc(cname, cprefix, kstruct, ksched) \
 static int cname##_cbc_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out, const unsigned char *in, size_t inl) \
 {\
-        while(inl>=EVP_MAXCHUNK) \
-            {\
+        while(inl>=EVP_MAXCHUNK) {\
             cprefix##_cbc_encrypt(in, out, (long)EVP_MAXCHUNK, &EVP_C_DATA(kstruct,ctx)->ksched, ctx->iv, EVP_CIPHER_CTX_is_encrypting(ctx));\
             inl-=EVP_MAXCHUNK;\
             in +=EVP_MAXCHUNK;\
             out+=EVP_MAXCHUNK;\
-            }\
+        }\
         if (inl)\
             cprefix##_cbc_encrypt(in, out, (long)inl, &EVP_C_DATA(kstruct,ctx)->ksched, ctx->iv, EVP_CIPHER_CTX_is_encrypting(ctx));\
         return 1;\
@@ -413,8 +413,7 @@ static int cname##_cfb##cbits##_cipher(EVP_CIPHER_CTX *ctx, unsigned char *out, 
     size_t chunk = EVP_MAXCHUNK;\
     if (cbits == 1)  chunk >>= 3;\
     if (inl < chunk) chunk = inl;\
-    while (inl && inl >= chunk)\
-    {\
+    while (inl && inl >= chunk) {\
         int num = EVP_CIPHER_CTX_get_num(ctx);\
         cprefix##_cfb##cbits##_encrypt(in, out, (long) \
             ((cbits == 1) \
@@ -725,32 +724,27 @@ struct evp_pkey_st {
         int security_bits;
         int size;
     } cache;
-} /* EVP_PKEY */ ;
+}; /* EVP_PKEY */
 
-#define EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx) \
-    ((ctx)->operation == EVP_PKEY_OP_SIGN \
-     || (ctx)->operation == EVP_PKEY_OP_SIGNCTX \
-     || (ctx)->operation == EVP_PKEY_OP_VERIFY \
-     || (ctx)->operation == EVP_PKEY_OP_VERIFYCTX \
-     || (ctx)->operation == EVP_PKEY_OP_VERIFYRECOVER)
+/* The EVP_PKEY_OP_TYPE_ macros are found in include/openssl/evp.h */
 
-#define EVP_PKEY_CTX_IS_DERIVE_OP(ctx) \
-    ((ctx)->operation == EVP_PKEY_OP_DERIVE)
+# define EVP_PKEY_CTX_IS_SIGNATURE_OP(ctx) \
+    (((ctx)->operation & EVP_PKEY_OP_TYPE_SIG) != 0)
 
-#define EVP_PKEY_CTX_IS_ASYM_CIPHER_OP(ctx) \
-    ((ctx)->operation == EVP_PKEY_OP_ENCRYPT \
-     || (ctx)->operation == EVP_PKEY_OP_DECRYPT)
+# define EVP_PKEY_CTX_IS_DERIVE_OP(ctx) \
+    (((ctx)->operation & EVP_PKEY_OP_TYPE_DERIVE) != 0)
 
-#define EVP_PKEY_CTX_IS_GEN_OP(ctx) \
-    ((ctx)->operation == EVP_PKEY_OP_PARAMGEN \
-     || (ctx)->operation == EVP_PKEY_OP_KEYGEN)
+# define EVP_PKEY_CTX_IS_ASYM_CIPHER_OP(ctx) \
+    (((ctx)->operation & EVP_PKEY_OP_TYPE_CRYPT) != 0)
 
-#define EVP_PKEY_CTX_IS_FROMDATA_OP(ctx) \
-    ((ctx)->operation == EVP_PKEY_OP_FROMDATA)
+# define EVP_PKEY_CTX_IS_GEN_OP(ctx) \
+    (((ctx)->operation & EVP_PKEY_OP_TYPE_GEN) != 0)
 
-#define EVP_PKEY_CTX_IS_KEM_OP(ctx) \
-    ((ctx)->operation == EVP_PKEY_OP_ENCAPSULATE \
-     || (ctx)->operation == EVP_PKEY_OP_DECAPSULATE)
+# define EVP_PKEY_CTX_IS_FROMDATA_OP(ctx) \
+    (((ctx)->operation & EVP_PKEY_OP_TYPE_DATA) != 0)
+
+# define EVP_PKEY_CTX_IS_KEM_OP(ctx) \
+    (((ctx)->operation & EVP_PKEY_OP_TYPE_KEM) != 0)
 
 void openssl_add_all_ciphers_int(void);
 void openssl_add_all_digests_int(void);
@@ -824,6 +818,8 @@ int evp_keymgmt_gen_set_template(const EVP_KEYMGMT *keymgmt, void *genctx,
                                  void *templ);
 int evp_keymgmt_gen_set_params(const EVP_KEYMGMT *keymgmt, void *genctx,
                                const OSSL_PARAM params[]);
+int evp_keymgmt_gen_get_params(const EVP_KEYMGMT *keymgmt,
+                               void *genctx, OSSL_PARAM params[]);
 void *evp_keymgmt_gen(const EVP_KEYMGMT *keymgmt, void *genctx,
                       OSSL_CALLBACK *cb, void *cbarg);
 void evp_keymgmt_gen_cleanup(const EVP_KEYMGMT *keymgmt, void *genctx);
@@ -950,6 +946,7 @@ int evp_kdf_get_number(const EVP_KDF *kdf);
 int evp_kem_get_number(const EVP_KEM *wrap);
 int evp_keyexch_get_number(const EVP_KEYEXCH *keyexch);
 int evp_keymgmt_get_number(const EVP_KEYMGMT *keymgmt);
+int evp_keymgmt_get_legacy_alg(const EVP_KEYMGMT *keymgmt);
 int evp_mac_get_number(const EVP_MAC *mac);
 int evp_md_get_number(const EVP_MD *md);
 int evp_rand_get_number(const EVP_RAND *rand);
@@ -966,5 +963,8 @@ int evp_signature_get_number(const EVP_SIGNATURE *signature);
 int evp_pkey_decrypt_alloc(EVP_PKEY_CTX *ctx, unsigned char **outp,
                            size_t *outlenp, size_t expected_outlen,
                            const unsigned char *in, size_t inlen);
+
+int ossl_md2hmacnid(int mdnid);
+int ossl_hmac2mdnid(int hmac_nid);
 
 #endif /* OSSL_CRYPTO_EVP_H */

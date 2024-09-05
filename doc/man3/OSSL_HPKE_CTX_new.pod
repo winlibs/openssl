@@ -187,11 +187,11 @@ modes> and L</Sender-authenticated HPKE Modes>.
 
 =head2 HPKE Roles
 
-HPKE contexts have a role - either sender or receiver. This is used 
+HPKE contexts have a role - either sender or receiver. This is used
 to control which functions can be called and so that senders do not
 reuse a key and nonce with different plaintexts.
 
-OSSL_HPKE_CTX_free(), OSSL_HPKE_export(), OSSL_HPKE_CTX_set1_psk(), 
+OSSL_HPKE_CTX_free(), OSSL_HPKE_export(), OSSL_HPKE_CTX_set1_psk(),
 and OSSL_HPKE_CTX_get_seq() can be called regardless of role.
 
 =over 4
@@ -199,7 +199,7 @@ and OSSL_HPKE_CTX_get_seq() can be called regardless of role.
 =item B<OSSL_HPKE_ROLE_SENDER>, 0
 
 An I<OSSL_HPKE_CTX> with this role can be used with
-OSSL_HPKE_encap(), OSSL_HPKE_seal(), OSSL_HPKE_CTX_set1_ikme() and 
+OSSL_HPKE_encap(), OSSL_HPKE_seal(), OSSL_HPKE_CTX_set1_ikme() and
 OSSL_HPKE_CTX_set1_authpriv().
 
 =item B<OSSL_HPKE_ROLE_RECEIVER>, 1
@@ -240,7 +240,8 @@ I<libctx> and I<propq> are used when fetching algorithms from providers and may
 be set to NULL.
 
 OSSL_HPKE_CTX_free() frees the I<ctx> B<OSSL_HPKE_CTX> that was created
-previously by a call to OSSL_HPKE_CTX_new().
+previously by a call to OSSL_HPKE_CTX_new().  If the argument to
+OSSL_HPKE_CTX_free() is NULL, nothing is done.
 
 =head2 Sender APIs
 
@@ -565,7 +566,7 @@ This functionality described here was added in OpenSSL 3.2.
 
 =head1 COPYRIGHT
 
-Copyright 2022-2023 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2022-2024 The OpenSSL Project Authors. All Rights Reserved.
 
 Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -59,6 +59,8 @@ static int final_key_share(SSL_CONNECTION *s, unsigned int context, int sent);
 static int init_srtp(SSL_CONNECTION *s, unsigned int context);
 #endif
 static int final_sig_algs(SSL_CONNECTION *s, unsigned int context, int sent);
+static int final_supported_versions(SSL_CONNECTION *s, unsigned int context,
+                                    int sent);
 static int final_early_data(SSL_CONNECTION *s, unsigned int context, int sent);
 static int final_maxfragmentlen(SSL_CONNECTION *s, unsigned int context,
                                 int sent);
@@ -344,7 +346,7 @@ static const EXTENSION_DEFINITION ext_defs[] = {
         /* Processed inline as part of version selection */
         NULL, tls_parse_stoc_supported_versions,
         tls_construct_stoc_supported_versions,
-        tls_construct_ctos_supported_versions, NULL
+        tls_construct_ctos_supported_versions, final_supported_versions
     },
     {
         TLSEXT_TYPE_psk_kex_modes,
@@ -1346,6 +1348,18 @@ static int final_sig_algs(SSL_CONNECTION *s, unsigned int context, int sent)
     return 1;
 }
 
+static int final_supported_versions(SSL_CONNECTION *s, unsigned int context,
+                                    int sent)
+{
+    if (!sent && context == SSL_EXT_TLS1_3_HELLO_RETRY_REQUEST) {
+        SSLfatal(s, TLS13_AD_MISSING_EXTENSION,
+                 SSL_R_MISSING_SUPPORTED_VERSIONS_EXTENSION);
+        return 0;
+    }
+
+    return 1;
+}
+
 static int final_key_share(SSL_CONNECTION *s, unsigned int context, int sent)
 {
 #if !defined(OPENSSL_NO_TLS1_3)
@@ -1368,12 +1382,15 @@ static int final_key_share(SSL_CONNECTION *s, unsigned int context, int sent)
      *     fail;
      */
     if (!s->server
-            && !sent
-            && (!s->hit
-                || (s->ext.psk_kex_mode & TLSEXT_KEX_MODE_FLAG_KE) == 0)) {
-        /* Nothing left we can do - just fail */
-        SSLfatal(s, SSL_AD_MISSING_EXTENSION, SSL_R_NO_SUITABLE_KEY_SHARE);
-        return 0;
+            && !sent) {
+        if ((s->ext.psk_kex_mode & TLSEXT_KEX_MODE_FLAG_KE) == 0) {
+            SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_NO_SUITABLE_KEY_SHARE);
+            return 0;
+        }
+        if (!s->hit) {
+            SSLfatal(s, SSL_AD_MISSING_EXTENSION, SSL_R_NO_SUITABLE_KEY_SHARE);
+            return 0;
+        }
     }
     /*
      * IF
@@ -1539,7 +1556,7 @@ int tls_psk_do_binder(SSL_CONNECTION *s, const EVP_MD *md,
     SSL_CTX *sctx = SSL_CONNECTION_GET_CTX(s);
 
     /* Ensure cast to size_t is safe */
-    if (!ossl_assert(hashsizei >= 0)) {
+    if (!ossl_assert(hashsizei > 0)) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         goto err;
     }
@@ -1683,7 +1700,7 @@ int tls_psk_do_binder(SSL_CONNECTION *s, const EVP_MD *md,
         /* HMAC keys can't do EVP_DigestVerify* - use CRYPTO_memcmp instead */
         ret = (CRYPTO_memcmp(binderin, binderout, hashsize) == 0);
         if (!ret)
-            SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_BINDER_DOES_NOT_VERIFY);
+            SSLfatal(s, SSL_AD_DECRYPT_ERROR, SSL_R_BINDER_DOES_NOT_VERIFY);
     }
 
  err:
@@ -1741,15 +1758,9 @@ static int final_early_data(SSL_CONNECTION *s, unsigned int context, int sent)
 static int final_maxfragmentlen(SSL_CONNECTION *s, unsigned int context,
                                 int sent)
 {
-    /*
-     * Session resumption on server-side with MFL extension active
-     *  BUT MFL extension packet was not resent (i.e. sent == 0)
-     */
-    if (s->server && s->hit && USE_MAX_FRAGMENT_LENGTH_EXT(s->session)
-            && !sent ) {
-        SSLfatal(s, SSL_AD_MISSING_EXTENSION, SSL_R_BAD_EXTENSION);
-        return 0;
-    }
+    /* MaxFragmentLength defaults to disabled */
+    if (s->session->ext.max_fragment_len_mode == TLSEXT_max_fragment_length_UNSPECIFIED)
+        s->session->ext.max_fragment_len_mode = TLSEXT_max_fragment_length_DISABLED;
 
     if (s->session && USE_MAX_FRAGMENT_LENGTH_EXT(s->session)) {
         s->rlayer.rrlmethod->set_max_frag_len(s->rlayer.rrl,

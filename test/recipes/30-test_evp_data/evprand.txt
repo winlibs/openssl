@@ -1,5 +1,5 @@
 #
-# Copyright 2020-2023 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2020-2024 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -79776,3 +79776,69 @@ EntropyPredictionResistanceA.14 = d7842e7ad0cbac6b9404e8e942fabb77974b353a7f9633
 AdditionalInputB.14 = 0155dc73a36c160d9e13c023e732798b4fba3a9fd849c0edf899765c5ff7349f
 EntropyPredictionResistanceB.14 = 96a30d8593cce5febd4f034ff97479eb8808e81bd7b8f7b44ae945fbbf503572
 Output.14 = ee191dc6bef025e36302bb8ce0e6a949f7b0d2944b246fc52d68a20c3b2b787595ca9d4bae2f55a13924fabbef8f700abc09d7dac1c1eb3a63c040867519e6724faeb532d01cd38922e4e0973566fc23f5fbc067f496cb97fe3ce97564f0010d6cd2b5d81a3e79fcb85f010191a76b4d796ea8c85b119dd24210f64725c09689
+
+Title = Test truncated Digests are not allowed in FIPS
+
+Availablein = fips
+FIPSversion = >=3.1.0
+RAND = HASH-DRBG
+Digest = SHA2-224
+GenerateBits = 16
+Result = EVP_RAND_CTX_set_params
+
+Availablein = fips
+FIPSversion = >=3.1.0
+RAND = HMAC-DRBG
+Digest = SHA2-384
+GenerateBits = 16
+Result = EVP_RAND_CTX_set_params
+
+Title = Test FIPS indicator callbacks for truncated digests
+
+Availablein = fips
+FIPSversion = >=3.4.0
+RAND = HASH-DRBG
+Digest = SHA2-224
+PredictionResistance = 0
+GenerateBits = 16
+Entropy.0 = c3ef82ce241f02e4298b118ca4f1622515e32abbae6b7433
+Nonce.0 = 15e32abbae6b7433
+Output.0 = 5af6
+Result = EVP_RAND_CTX_set_params
+Reason = digest not allowed
+
+Availablein = fips
+FIPSversion = >=3.4.0
+RAND = HASH-DRBG
+Unapproved = 1
+CtrlInit = digest-check:0
+Digest = SHA2-224
+PredictionResistance = 0
+GenerateBits = 16
+Entropy.0 = c3ef82ce241f02e4298b118ca4f1622515e32abbae6b7433
+Nonce.0 = 15e32abbae6b7433
+Output.0 = 5af6
+
+Availablein = fips
+FIPSversion = >=3.4.0
+RAND = HMAC-DRBG
+Digest = SHA2-384
+PredictionResistance = 0
+GenerateBits = 16
+Entropy.0 = 32c1ca125223de8de569697f92a37c6732c1ca125223de8de569697f92a37c67
+Nonce.0 = 15e32abbae6b7433
+Output.0 = ee9f
+Result = EVP_RAND_CTX_set_params
+Reason = digest not allowed
+
+Availablein = fips
+FIPSversion = >=3.4.0
+RAND = HMAC-DRBG
+Unapproved = 1
+CtrlInit = digest-check:0
+Digest = SHA2-384
+PredictionResistance = 0
+GenerateBits = 16
+Entropy.0 = 32c1ca125223de8de569697f92a37c6732c1ca125223de8de569697f92a37c67
+Nonce.0 = 15e32abbae6b7433
+Output.0 = ee9f

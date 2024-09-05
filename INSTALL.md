@@ -52,6 +52,8 @@ To install OpenSSL, you will need:
  * Perl 5 with core modules (please read [NOTES-PERL.md](NOTES-PERL.md))
  * The Perl module `Text::Template` (please read [NOTES-PERL.md](NOTES-PERL.md))
  * an ANSI C compiler
+ * POSIX C library (at least POSIX.1-2008), or compatible types and
+   functionality.
  * a development environment in the form of development libraries and C
    header files
  * a supported operating system
@@ -64,6 +66,8 @@ issues and other details, please read one of these:
  * [Notes for Windows platforms](NOTES-WINDOWS.md)
  * [Notes for the DOS platform with DJGPP](NOTES-DJGPP.md)
  * [Notes for the OpenVMS platform](NOTES-VMS.md)
+ * [Notes for the HPE NonStop platform](NOTES-NONSTOP.md)
+ * [Notes on POSIX](NOTES-POSIX.md)
  * [Notes on Perl](NOTES-PERL.md)
  * [Notes on Valgrind](NOTES-VALGRIND.md)
 
@@ -141,7 +145,7 @@ Use the following commands to configure, build and test OpenSSL.
 The testing is optional, but recommended if you intend to install
 OpenSSL for production use.
 
-### Unix / Linux / macOS
+### Unix / Linux / macOS / NonStop
 
     $ ./Configure
     $ make
@@ -198,7 +202,7 @@ the global search path for system libraries.
 Finally, if you plan on using the FIPS module, you need to read the
 [Post-installation Notes](#post-installation-notes) further down.
 
-### Unix / Linux / macOS
+### Unix / Linux / macOS / NonStop
 
 Depending on your distribution, you need to run the following command as
 root user or prepend `sudo` to the command:
@@ -506,11 +510,6 @@ This source is ignored by the FIPS provider.
 Use the `RDSEED` or `RDRAND` command on x86 or `RNDRRS` command on aarch64
 if provided by the CPU.
 
-### librandom
-
-Use librandom (not implemented yet).
-This source is ignored by the FIPS provider.
-
 ### none
 
 Disable automatic seeding.  This is the default on some operating systems where
@@ -521,6 +520,35 @@ For more information, see the section [Notes on random number generation][rng]
 at the end of this document.
 
 [rng]: #notes-on-random-number-generation
+
+### jitter
+
+When configured with `enable-jitter`, a "JITTER" RNG is compiled that
+can provide an alternative software seed source. It can be configured
+by setting `seed` option in `openssl.cnf`. A minimal `openssl.cnf` is
+shown below:
+
+    openssl_conf = openssl_init
+
+    [openssl_init]
+    random = random
+
+    [random]
+    seed=JITTER
+
+It uses a statically linked [jitterentropy-library](https://github.com/smuellerDD/jitterentropy-library) as the seed source.
+
+Additional configuration flags available:
+
+    --with-jitter-include=DIR
+
+The directory for the location of the jitterentropy.h include file, if
+it is outside the system include path.
+
+    --with-jitter-lib=DIR
+
+This is the directory containing the static libjitterentropy.a
+library, if it is outside the system library path.
 
 Setting the FIPS HMAC key
 -------------------------
@@ -606,6 +634,7 @@ Do not use `atexit()` in libcrypto builds.
 
 `atexit()` has varied semantics between platforms and can cause SIGSEGV in some
 circumstances. This option disables the atexit registration of OPENSSL_cleanup.
+By default, NonStop configurations use `no-atexit`.
 
 ### no-autoalginit
 
@@ -805,6 +834,13 @@ Build (and install) the FIPS provider
 Don't perform FIPS module run-time checks related to enforcement of security
 parameters such as minimum security strength of keys.
 
+### no-fips-post
+
+Don't perform FIPS module Power On Self Tests.
+
+This option MUST be used for debugging only as it makes the FIPS provider
+non-compliant. It is useful when setting breakpoints in FIPS algorithms.
+
 ### enable-fuzz-libfuzzer, enable-fuzz-afl
 
 Build with support for fuzzing using either libfuzzer or AFL.
@@ -867,6 +903,10 @@ As synonym for `no-padlockeng`.  Deprecated and should not be used.
 ### no-pic
 
 Don't build with support for Position Independent Code.
+
+### enable-pie
+
+Build with support for Position Independent Execution.
 
 ### no-pinshared
 
@@ -1082,6 +1122,14 @@ when needed.
 
 This is only supported on systems where loading of shared libraries is supported.
 
+### enable-unstable-qlog
+
+Enables qlog output support for the QUIC protocol. This functionality is
+unstable and implements a draft version of the qlog specification. The qlog
+output from OpenSSL will change in incompatible ways in future, and is not
+subject to any format stability or compatibility guarantees at this time. See
+the manpage openssl-qlog(7) for details.
+
 ### 386
 
 In 32-bit x86 builds, use the 80386 instruction set only in assembly modules
@@ -1102,6 +1150,10 @@ Similarly `no-dtls` will disable `dtls1` and `dtls1_2`.  The `no-ssl` option is
 synonymous with `no-ssl3`.  Note this only affects version negotiation.
 OpenSSL will still provide the methods for applications to explicitly select
 the individual protocol versions.
+
+### no-integrity-only-ciphers
+
+Don't build support for integrity only ciphers in tls.
 
 ### no-{protocol}-method
 
@@ -1281,7 +1333,7 @@ Configure OpenSSL
 ### Automatic Configuration
 
 In previous version, the `config` script determined the platform type and
-compiler and then called `Configure`. Starting with this release, they are
+compiler and then called `Configure`. Starting with version 3.0, they are
 the same.
 
 #### Unix / Linux / macOS
@@ -1624,6 +1676,12 @@ described here.  Examine the Makefiles themselves for the full list.
     build_docs
                    Build all documentation components.
 
+    debuginfo
+                    On unix platforms, this target can be used to create .debug
+                    libraries, which separate the DWARF information in the
+                    shared library ELF files into a separate file for use
+                    in post-mortem (core dump) debugging
+
     clean
                    Remove all build artefacts and return the directory to a "clean"
                    state.
@@ -1736,7 +1794,7 @@ More about our support resources can be found in the [SUPPORT] file.
 
 ### Configuration Errors
 
-If the `./Configure` or `./Configure` command fails with an error message,
+If the `./config` or `./Configure` command fails with an error message,
 read the error message carefully and try to figure out whether you made
 a mistake (e.g., by providing a wrong option), or whether the script is
 working incorrectly. If you think you encountered a bug, please

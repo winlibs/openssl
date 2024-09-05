@@ -3,6 +3,10 @@ OpenSSL Demonstration Applications
 This folder contains source code that demonstrates the proper use of the OpenSSL
 library API.
 
+Note: Makefiles are provided in the demo subfolders to demonstrate how to build
+them, but are not frequently used.  Configure openssl with enable-demos to build
+them automatically through the perl based build system
+
 bio:                   Demonstration of a simple TLS client and server
 
 certs:                 Demonstration of creating certs, using OCSP
@@ -45,6 +49,7 @@ scrypt.c               Demonstration of SCRYPT password based key derivation
 
 keyexch:
 x25519.c               Demonstration of X25519 based key exchange
+ecdh.c                 Demonstration of ECDH key exchange
 
 mac:
 gmac.c                 Demonstration of GMAC message authentication

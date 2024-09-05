@@ -26,7 +26,7 @@ IF[{- !$disabled{tests} -}]
           testutil/format_output.c testutil/load.c testutil/fake_random.c \
           testutil/test_cleanup.c testutil/main.c testutil/testutil_init.c \
           testutil/options.c testutil/test_options.c testutil/provider.c \
-          testutil/apps_shims.c testutil/random.c $LIBAPPSSRC
+          testutil/apps_shims.c testutil/random.c testutil/helper.c $LIBAPPSSRC
   INCLUDE[libtestutil.a]=../include ../apps/include ..
   DEPEND[libtestutil.a]=../libcrypto
 
@@ -40,7 +40,7 @@ IF[{- !$disabled{tests} -}]
           exptest pbetest localetest evp_pkey_ctx_new_from_name \
           evp_pkey_provided_test evp_test evp_extra_test evp_extra_test2 \
           evp_fetch_prov_test evp_libctx_test ossl_store_test \
-          v3nametest v3ext punycode_test \
+          v3nametest v3ext punycode_test evp_byname_test \
           crltest danetest bad_dtls_test lhash_test sparse_array_test \
           conf_include_test params_api_test params_conversion_test \
           constant_time_test safe_math_test verify_extra_test clienthellotest \
@@ -49,7 +49,7 @@ IF[{- !$disabled{tests} -}]
           ssl_test_ctx_test ssl_test x509aux cipherlist_test asynciotest \
           bio_callback_test bio_memleak_test bio_core_test bio_dgram_test param_build_test \
           bioprinttest sslapitest ssl_handshake_rtt_test dtlstest sslcorrupttest \
-          bio_enc_test pkey_meth_test pkey_meth_kdf_test evp_kdf_test uitest \
+          bio_base64_test bio_enc_test pkey_meth_test pkey_meth_kdf_test evp_kdf_test uitest \
           cipherbytes_test threadstest_fips threadpool_test \
           asn1_encode_test asn1_decode_test asn1_string_table_test asn1_stable_parse_test \
           x509_time_test x509_dup_cert_test x509_check_cert_pkey_test \
@@ -60,10 +60,11 @@ IF[{- !$disabled{tests} -}]
           context_internal_test aesgcmtest params_test evp_pkey_dparams_test \
           keymgmt_internal_test hexstr_test provider_status_test defltfips_test \
           bio_readbuffer_test user_property_test pkcs7_test upcallstest \
-          provfetchtest prov_config_test rand_test ca_internals_test \
-          bio_tfo_test membio_test bio_dgram_test list_test fips_version_test \
-          x509_test hpke_test pairwise_fail_test nodefltctxtest \
-          x509_load_cert_file_test
+          provfetchtest prov_config_test rand_test \
+          ca_internals_test bio_tfo_test membio_test bio_dgram_test list_test \
+          fips_version_test x509_test hpke_test pairwise_fail_test \
+          nodefltctxtest evp_xof_test x509_load_cert_file_test bio_meth_test \
+          x509_acert_test x509_req_test strtoultest
 
   IF[{- !$disabled{'rpk'} -}]
     PROGRAMS{noinst}=rpktest
@@ -74,8 +75,12 @@ IF[{- !$disabled{tests} -}]
   ENDIF
 
   IF[{- !$disabled{quic} -}]
-    PROGRAMS{noinst}=priority_queue_test event_queue_test quicfaultstest quicapitest \
-                     quic_newcid_test
+    PROGRAMS{noinst}=priority_queue_test quicfaultstest quicapitest \
+                     quic_newcid_test quic_srt_gen_test
+  ENDIF
+
+  IF[{- !$disabled{qlog} -}]
+    PROGRAMS{noinst}=json_test quic_qlog_test
   ENDIF
 
   IF[{- !$disabled{comp} && (!$disabled{brotli} || !$disabled{zstd} || !$disabled{zlib}) -}]
@@ -336,6 +341,18 @@ IF[{- !$disabled{tests} -}]
   INCLUDE[quic_txpim_test]=../include ../apps/include
   DEPEND[quic_txpim_test]=../libcrypto.a ../libssl.a libtestutil.a
 
+  SOURCE[quic_srtm_test]=quic_srtm_test.c
+  INCLUDE[quic_srtm_test]=../include ../apps/include
+  DEPEND[quic_srtm_test]=../libcrypto.a ../libssl.a libtestutil.a
+
+  SOURCE[quic_lcidm_test]=quic_lcidm_test.c
+  INCLUDE[quic_lcidm_test]=../include ../apps/include
+  DEPEND[quic_lcidm_test]=../libcrypto.a ../libssl.a libtestutil.a
+
+  SOURCE[quic_rcidm_test]=quic_rcidm_test.c
+  INCLUDE[quic_rcidm_test]=../include ../apps/include
+  DEPEND[quic_rcidm_test]=../libcrypto.a ../libssl.a libtestutil.a
+
   SOURCE[quic_fifd_test]=quic_fifd_test.c cc_dummy.c
   INCLUDE[quic_fifd_test]=../include ../apps/include
   DEPEND[quic_fifd_test]=../libcrypto.a ../libssl.a libtestutil.a
@@ -357,6 +374,12 @@ IF[{- !$disabled{tests} -}]
   SOURCE[quic_multistream_test]=quic_multistream_test.c helpers/ssltestlib.c $QUICTESTHELPERS
   INCLUDE[quic_multistream_test]=../include ../apps/include
   DEPEND[quic_multistream_test]=../libcrypto.a ../libssl.a libtestutil.a
+
+  IF[{- !$disabled{'qlog'} -}]
+      SOURCE[quic_qlog_test]=quic_qlog_test.c
+      INCLUDE[quic_qlog_test]=../include ../apps/include
+      DEPEND[quic_qlog_test]=../libcrypto.a ../libssl.a libtestutil.a
+  ENDIF
 
   SOURCE[asynctest]=asynctest.c
   INCLUDE[asynctest]=../include ../apps/include
@@ -390,13 +413,17 @@ IF[{- !$disabled{tests} -}]
   INCLUDE[punycode_test]=../include ../apps/include
   DEPEND[punycode_test]=../libcrypto.a libtestutil.a
 
+  SOURCE[evp_byname_test]=evp_byname_test.c
+  INCLUDE[evp_byname_test]=../include ../apps/include
+  DEPEND[evp_byname_test]=../libcrypto libtestutil.a
+
   SOURCE[stack_test]=stack_test.c
   INCLUDE[stack_test]=../include ../apps/include
   DEPEND[stack_test]=../libcrypto libtestutil.a
 
   SOURCE[lhash_test]=lhash_test.c
   INCLUDE[lhash_test]=../include ../apps/include
-  DEPEND[lhash_test]=../libcrypto libtestutil.a
+  DEPEND[lhash_test]=../libcrypto.a libtestutil.a
 
   SOURCE[dtlsv1listentest]=dtlsv1listentest.c
   INCLUDE[dtlsv1listentest]=../include ../apps/include
@@ -466,6 +493,10 @@ IF[{- !$disabled{tests} -}]
   SOURCE[bio_memleak_test]=bio_memleak_test.c
   INCLUDE[bio_memleak_test]=../include ../apps/include
   DEPEND[bio_memleak_test]=../libcrypto libtestutil.a
+
+  SOURCE[bio_meth_test]=bio_meth_test.c
+  INCLUDE[bio_meth_test]=../include ../apps/include
+  DEPEND[bio_meth_test]=../libcrypto libtestutil.a
 
   SOURCE[bioprinttest]=bioprinttest.c
   INCLUDE[bioprinttest]=../include ../apps/include
@@ -551,6 +582,10 @@ IF[{- !$disabled{tests} -}]
   INCLUDE[sslcorrupttest]=../include ../apps/include
   DEPEND[sslcorrupttest]=../libcrypto ../libssl libtestutil.a
 
+  SOURCE[bio_base64_test]=bio_base64_test.c
+  INCLUDE[bio_base64_test]=../include ../apps/include
+  DEPEND[bio_base64_test]=../libcrypto libtestutil.a
+
   SOURCE[bio_enc_test]=bio_enc_test.c
   INCLUDE[bio_enc_test]=../include ../apps/include
   DEPEND[bio_enc_test]=../libcrypto libtestutil.a
@@ -566,6 +601,10 @@ IF[{- !$disabled{tests} -}]
   SOURCE[evp_kdf_test]=evp_kdf_test.c
   INCLUDE[evp_kdf_test]=../include ../apps/include
   DEPEND[evp_kdf_test]=../libcrypto libtestutil.a
+
+  SOURCE[evp_xof_test]=evp_xof_test.c
+  INCLUDE[evp_xof_test]=../include ../apps/include
+  DEPEND[evp_xof_test]=../libcrypto libtestutil.a
 
   SOURCE[evp_pkey_dparams_test]=evp_pkey_dparams_test.c
   INCLUDE[evp_pkey_dparams_test]=../include ../apps/include
@@ -584,7 +623,8 @@ IF[{- !$disabled{tests} -}]
   DEPEND[recordlentest]=../libcrypto ../libssl libtestutil.a
 
   SOURCE[drbgtest]=drbgtest.c
-  INCLUDE[drbgtest]=../include ../apps/include ../providers/common/include
+  INCLUDE[drbgtest]=../include ../apps/include ../providers/common/include \
+                    ../providers/fips/include
   DEPEND[drbgtest]=../libcrypto.a libtestutil.a
 
   SOURCE[rand_status_test]=rand_status_test.c
@@ -843,10 +883,6 @@ IF[{- !$disabled{tests} -}]
       INCLUDE[priority_queue_test]=../include ../apps/include
       DEPEND[priority_queue_test]=../libcrypto ../libssl.a libtestutil.a
 
-      SOURCE[event_queue_test]=event_queue_test.c
-      INCLUDE[event_queue_test]=../include ../apps/include
-      DEPEND[event_queue_test]=../libcrypto ../libssl.a libtestutil.a
-
       SOURCE[quicfaultstest]=quicfaultstest.c helpers/ssltestlib.c $QUICTESTHELPERS
       INCLUDE[quicfaultstest]=../include ../apps/include ..
       DEPEND[quicfaultstest]=../libcrypto.a ../libssl.a libtestutil.a
@@ -858,6 +894,16 @@ IF[{- !$disabled{tests} -}]
       SOURCE[quic_newcid_test]=quic_newcid_test.c helpers/ssltestlib.c $QUICTESTHELPERS
       INCLUDE[quic_newcid_test]=../include ../apps/include ..
       DEPEND[quic_newcid_test]=../libcrypto.a ../libssl.a libtestutil.a
+
+      SOURCE[quic_srt_gen_test]=quic_srt_gen_test.c helpers/ssltestlib.c $QUICTESTHELPERS
+      INCLUDE[quic_srt_gen_test]=../include ../apps/include ..
+      DEPEND[quic_srt_gen_test]=../libcrypto.a ../libssl.a libtestutil.a
+    ENDIF
+
+    IF[{- !$disabled{qlog} -}]
+      SOURCE[json_test]=json_test.c helpers/ssltestlib.c $QUICTESTHELPERS
+      INCLUDE[json_test]=../include ../apps/include
+      DEPEND[json_test]=../libcrypto.a ../libssl.a libtestutil.a
     ENDIF
 
     SOURCE[dhtest]=dhtest.c
@@ -1149,6 +1195,7 @@ ENDIF
   IF[{- !$disabled{'quic'} -}]
     PROGRAMS{noinst}=quic_wire_test quic_ackm_test quic_record_test
     PROGRAMS{noinst}=quic_fc_test quic_stream_test quic_cfq_test quic_txpim_test
+    PROGRAMS{noinst}=quic_srtm_test quic_lcidm_test quic_rcidm_test
     PROGRAMS{noinst}=quic_fifd_test quic_txp_test quic_tserver_test
     PROGRAMS{noinst}=quic_client_test quic_cc_test quic_multistream_test
   ENDIF
@@ -1164,6 +1211,18 @@ ENDIF
   SOURCE[cert_comp_test]=cert_comp_test.c helpers/ssltestlib.c
   INCLUDE[cert_comp_test]=../include ../apps/include ..
   DEPEND[cert_comp_test]=../libcrypto ../libssl libtestutil.a
+
+  SOURCE[x509_acert_test]=x509_acert_test.c
+  INCLUDE[x509_acert_test]=../include ../apps/include
+  DEPEND[x509_acert_test]=../libcrypto libtestutil.a
+
+  SOURCE[x509_req_test]=x509_req_test.c
+  INCLUDE[x509_req_test]=../include ../apps/include
+  DEPEND[x509_req_test]=../libcrypto libtestutil.a
+
+  SOURCE[strtoultest]=strtoultest.c
+  INCLUDE[strtoultest]=../include ../apps/include
+  DEPEND[strtoultest]=../libcrypto libtestutil.a
 
 {-
    use File::Spec::Functions;

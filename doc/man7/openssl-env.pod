@@ -80,18 +80,26 @@ OpenSSL supports a number of different algorithm implementations for
 various machines and, by default, it determines which to use based on the
 processor capabilities and run time feature enquiry.  These environment
 variables can be used to exert more control over this selection process.
-See L<OPENSSL_ia32cap(3)>, L<OPENSSL_s390xcap(3)>.
+See L<OPENSSL_ia32cap(3)>, L<OPENSSL_s390xcap(3)> and L<OPENSSL_riscvcap(3)>.
 
 =item B<NO_PROXY>, B<HTTPS_PROXY>, B<HTTP_PROXY>
 
 Specify a proxy hostname.
 See L<OSSL_HTTP_parse_url(3)>.
 
+=item B<QLOGDIR>
+
+Specifies a QUIC qlog output directory. See L<openssl-qlog(7)>.
+
+=item B<OSSL_QFILTER>
+
+Used to set a QUIC qlog filter specification. See L<openssl-qlog(7)>.
+
 =back
 
 =head1 COPYRIGHT
 
-Copyright 2019-2022 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2019-2024 The OpenSSL Project Authors. All Rights Reserved.
 
 Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy

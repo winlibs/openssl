@@ -1,32 +1,42 @@
 #
 # To run the demos when linked with a shared library (default) ensure that
-# libcrypto and libssl are on the library path. For example to run the
-# tls-client-block demo:
+# libcrypto and libssl are on the library path. For example:
 #
-#    LD_LIBRARY_PATH=../.. ./tls-client-block
+#    LD_LIBRARY_PATH=../.. ./tls-client-block www.example.com 443
 
-CFLAGS = -I../../include -g
+TESTS = tls-client-block \
+        tls-server-block \
+        quic-client-block \
+        quic-multi-stream \
+        tls-client-non-block \
+        quic-client-non-block
+
+CFLAGS  = -I../../include -g -Wall
 LDFLAGS = -L../..
-LDLIBS = -lcrypto -lssl
+LDLIBS  = -lcrypto -lssl
 
-all: tls-client-block quic-client-block quic-multi-stream tls-client-non-block \
-     quic-client-non-block
+all: $(TESTS) chain
 
-tls-client-block: tls-client-block.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+tls-client-block: tls-client-block.o
+tls-server-block: tls-server-block.o
+quic-client-block: quic-client-block.o
+quic-multi-stream: quic-multi-stream.o
+tls-client-non-block: tls-client-non-block.o
+quic-client-non-block: quic-client-non-block.o
 
-quic-client-block: quic-client-block.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+chain: chain.pem
+pkey.pem:
+	openssl genpkey -algorithm rsa -out pkey.pem -pkeyopt rsa_keygen_bits:2048
+chain.pem: pkey.pem
+	openssl req -x509 -new -key pkey.pem -days 36500 -subj / -out chain.pem
 
-quic-multi-stream: quic-multi-stream.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
-
-tls-client-non-block: tls-client-non-block.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
-
-quic-client-non-block: quic-client-non-block.c
+$(TESTS):
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
 
 clean:
-	$(RM) *.o tls-client-block quic-client-block quic-multi-stream \
-	      tls-client-non-block quic-client-non-block
+	$(RM) $(TESTS) *.o
+
+.PHONY: test chain
+test: all
+	@echo "\nTLS and QUIC tests:"
+	@echo "skipped"

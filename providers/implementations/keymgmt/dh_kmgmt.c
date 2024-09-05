@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -12,6 +12,7 @@
  * internal use.
  */
 #include "internal/deprecated.h"
+#include "internal/common.h"
 
 #include <string.h> /* strcmp */
 #include <openssl/core_dispatch.h>
@@ -387,9 +388,11 @@ static int dh_validate_public(const DH *dh, int checktype)
     if (pub_key == NULL)
         return 0;
 
-    /* The partial test is only valid for named group's with q = (p - 1) / 2 */
-    if (checktype == OSSL_KEYMGMT_VALIDATE_QUICK_CHECK
-        && ossl_dh_is_named_safe_prime_group(dh))
+    /*
+     * The partial test is only valid for named group's with q = (p - 1) / 2
+     * but for that case it is also fully sufficient to check the key validity.
+     */
+    if (ossl_dh_is_named_safe_prime_group(dh))
         return ossl_dh_check_pub_key_partial(dh, pub_key, &res);
 
     return DH_check_pub_key_ex(dh, pub_key);
@@ -524,6 +527,7 @@ static int dh_gen_common_set_params(void *genctx, const OSSL_PARAM params[])
 {
     struct dh_gen_ctx *gctx = genctx;
     const OSSL_PARAM *p;
+    int gen_type = -1;
 
     if (gctx == NULL)
         return 0;
@@ -533,11 +537,13 @@ static int dh_gen_common_set_params(void *genctx, const OSSL_PARAM params[])
     p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_FFC_TYPE);
     if (p != NULL) {
         if (p->data_type != OSSL_PARAM_UTF8_STRING
-            || ((gctx->gen_type =
+            || ((gen_type =
                  dh_gen_type_name2id_w_default(p->data, gctx->dh_type)) == -1)) {
             ERR_raise(ERR_LIB_PROV, ERR_R_PASSED_INVALID_ARGUMENT);
             return 0;
         }
+        if (gen_type != -1)
+            gctx->gen_type = gen_type;
     }
     p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_GROUP_NAME);
     if (p != NULL) {
@@ -705,6 +711,19 @@ static void *dh_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)
      */
     if (gctx->group_nid != NID_undef)
         gctx->gen_type = DH_PARAMGEN_TYPE_GROUP;
+
+    /*
+     * Do a bounds check on context gen_type. Must be in range:
+     * DH_PARAMGEN_TYPE_GENERATOR <= gen_type <= DH_PARAMGEN_TYPE_GROUP
+     * Noted here as this needs to be adjusted if a new group type is
+     * added.
+     */
+    if (!ossl_assert((gctx->gen_type >= DH_PARAMGEN_TYPE_GENERATOR)
+                    && (gctx->gen_type <= DH_PARAMGEN_TYPE_GROUP))) {
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_INTERNAL_ERROR,
+                       "gen_type set to unsupported value %d", gctx->gen_type);
+        return NULL;
+    }
 
     /* For parameter generation - If there is a group name just create it */
     if (gctx->gen_type == DH_PARAMGEN_TYPE_GROUP

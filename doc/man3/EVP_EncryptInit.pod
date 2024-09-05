@@ -272,6 +272,7 @@ Increments the reference count for an B<EVP_CIPHER> structure.
 
 Decrements the reference count for the fetched B<EVP_CIPHER> structure.
 If the reference count drops to 0 then the structure is freed.
+If the argument is NULL, nothing is done.
 
 =item EVP_CIPHER_CTX_new()
 
@@ -280,9 +281,9 @@ Allocates and returns a cipher context.
 =item EVP_CIPHER_CTX_free()
 
 Clears all information from a cipher context and frees any allocated memory
-associated with it, including I<ctx> itself. This function should be called after
-all operations using a cipher are complete so sensitive information does not
-remain in memory.
+associated with it, including I<ctx> itself. This function should be called
+after all operations using a cipher are complete so sensitive information does
+not remain in memory. If the argument is NULL, nothing is done.
 
 =item EVP_CIPHER_CTX_dup()
 
@@ -374,9 +375,13 @@ exists.
 
 Encrypts I<inl> bytes from the buffer I<in> and writes the encrypted version to
 I<out>. The pointers I<out> and I<in> may point to the same location, in which
-case the encryption will be done in-place. If I<out> and I<in> point to different
-locations, the two buffers must be disjoint, otherwise the operation might fail
-or the outcome might be undefined.
+case the encryption will be done in-place. However, in-place encryption is
+guaranteed to work only if the encryption context (I<ctx>) has processed data in
+multiples of the block size. If the context contains an incomplete data block
+from previous operations, in-place encryption will fail.
+
+If I<out> and I<in> point to different locations, the two buffers must be
+disjoint, otherwise the operation might fail or the outcome might be undefined.
 
 This function can be called multiple times to encrypt successive blocks
 of data. The amount of data written depends on the block alignment of the
@@ -488,7 +493,9 @@ EVP_CIPHER_free().
 
 Return the NID of a cipher when passed an B<EVP_CIPHER> or B<EVP_CIPHER_CTX>
 structure.  The actual NID value is an internal value which may not have a
-corresponding OBJECT IDENTIFIER.
+corresponding OBJECT IDENTIFIER.  NID_undef is returned in the event that the
+nid is unknown or if the cipher has not been properly initialized via a call to
+B<EVP_CipherInit>.
 
 =item EVP_CIPHER_CTX_set_flags(), EVP_CIPHER_CTX_clear_flags() and EVP_CIPHER_CTX_test_flags()
 
@@ -525,8 +532,10 @@ length to any value other than the fixed value is an error.
 =item EVP_CIPHER_get_iv_length() and EVP_CIPHER_CTX_get_iv_length()
 
 Return the IV length of a cipher when passed an B<EVP_CIPHER> or
-B<EVP_CIPHER_CTX>. It will return zero if the cipher does not use an IV.
-The constant B<EVP_MAX_IV_LENGTH> is the maximum IV length for all ciphers.
+B<EVP_CIPHER_CTX>. It will return zero if the cipher does not use an IV, if
+the cipher has not yet been initialized within the B<EVP_CIPHER_CTX>, or if the
+passed cipher is NULL.  The constant B<EVP_MAX_IV_LENGTH> is the maximum IV
+length for all ciphers.
 
 =item EVP_CIPHER_CTX_get_tag_length()
 
@@ -538,7 +547,8 @@ the tag length has not been set.
 
 Return the block size of a cipher when passed an B<EVP_CIPHER> or
 B<EVP_CIPHER_CTX> structure. The constant B<EVP_MAX_BLOCK_LENGTH> is also the
-maximum block length for all ciphers.
+maximum block length for all ciphers. A value of 0 is returned if the cipher
+has not been properly initialized with a call to B<EVP_CipherInit>.
 
 =item EVP_CIPHER_get_type() and EVP_CIPHER_CTX_get_type()
 
@@ -580,7 +590,7 @@ B<EVP_CIPHER>.
 
 Returns the B<EVP_CIPHER> structure when passed an B<EVP_CIPHER_CTX> structure.
 EVP_CIPHER_CTX_get1_cipher() is the same except the ownership is passed to
-the caller.
+the caller. Both functions return NULL on error.
 
 =item EVP_CIPHER_get_mode() and EVP_CIPHER_CTX_get_mode()
 
@@ -616,7 +626,8 @@ Sets the AlgorithmIdentifier "parameter" based on the passed cipher. This will
 typically include any parameters and an IV. The cipher IV (if any) must be set
 when this call is made. This call should be made before the cipher is actually
 "used" (before any EVP_EncryptUpdate(), EVP_DecryptUpdate() calls for example).
-This function may fail if the cipher does not have any ASN1 support.
+This function may fail if the cipher does not have any ASN1 support, or if an
+uninitialized cipher is passed to it.
 
 =item EVP_CIPHER_asn1_to_param()
 
@@ -722,6 +733,12 @@ Gets 1 if the cipher algorithm I<cipher> supports the gettable EVP_CIPHER_CTX
 parameter B<OSSL_CIPHER_PARAM_RANDOM_KEY>. Only DES and 3DES set this to 1,
 all other OpenSSL ciphers return 0.
 
+=item "decrypt-only" (B<OSSL_CIPHER_PARAM_DECRYPT_ONLY) <integer>
+
+Gets 1 if the cipher algorithm I<cipher> implementation supports only
+the decryption operation such as the 3DES ciphers in the fips provider.
+Otherwise gets 0 or the parameter might not be present at all.
+
 =back
 
 =head2 Gettable and Settable EVP_CIPHER_CTX parameters
@@ -765,12 +782,23 @@ The length of the "keybits" parameter should not exceed that of a B<size_t>.
 Gets or sets the number of rounds to be used for a cipher.
 This is used by the RC5 cipher.
 
-=item "alg_id_param" (B<OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS>) <octet string>
+=item "algorithm-id" (B<OSSL_CIPHER_PARAM_ALGORITHM_ID>) <octet string>
+
+Used to get the DER encoded AlgorithmIdentifier from the cipher
+implementation.  Functions like L<EVP_PKEY_CTX_get_algor(3)> use this
+parameter.
+
+=item "algorithm-id-params" (B<OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS>) <octet string>
 
 Used to pass the DER encoded AlgorithmIdentifier parameter to or from
-the cipher implementation.  Functions like L<EVP_CIPHER_param_to_asn1(3)>
-and L<EVP_CIPHER_asn1_to_param(3)> use this parameter for any implementation
-that has the flag B<EVP_CIPH_FLAG_CUSTOM_ASN1> set.
+the cipher implementation.
+Functions like L<EVP_CIPHER_CTX_set_algor_params(3)> and
+L<EVP_CIPHER_CTX_get_algor_params(3)> use this parameter.
+
+=item "alg_id_params" (B<OSSL_CIPHER_PARAM_ALGORITHM_ID_PARAMS_OLD>) <octet string>
+
+An deprecated alias for "algorithm-id-params", only used by
+L<EVP_CIPHER_param_to_asn1(3)> and L<EVP_CIPHER_asn1_to_param(3)>.
 
 =item "cts_mode" (B<OSSL_CIPHER_PARAM_CTS_MODE>) <UTF8 string>
 
@@ -881,6 +909,24 @@ Gets the result of running the "tls1multi_aad" operation.
 =item "tls-mac" (B<OSSL_CIPHER_PARAM_TLS_MAC>) <octet ptr>
 
 Used to pass the TLS MAC data.
+
+=item "fips-indicator" (B<OSSL_CIPHER_PARAM_FIPS_APPROVED_INDICATOR>) <integer>
+
+This option is used by the OpenSSL FIPS provider.
+
+A getter that returns 1 if the operation is FIPS approved, or 0 otherwise.
+This may be used after calling a cipher final operation such as
+EVP_EncryptFinal_ex(). It may return 0 if the "encrypt-check" option is set to 0.
+
+=item "iv-generated" (B<OSSL_CIPHER_PARAM_AEAD_IV_GENERATED>) <unsigned integer>
+
+An indicator that returns 1 if an IV was generated internally during encryption,
+or O otherwise.
+This may be used by GCM ciphers after calling a cipher final operation such
+as EVP_EncryptFinal_ex().
+GCM should generate an IV internally if the IV is not specified during a
+cipher initialisation call such as EVP_CipherInit_ex().
+See FIPS 140-3 IG C.H for information related to IV requirements.
 
 =back
 
@@ -1027,6 +1073,18 @@ The IEEE Std. 1619-2007 variant of SM4-XTS algorithm.
 =back
 
 The default value is "GB".
+
+=item "encrypt-check" (B<OSSL_CIPHER_PARAM_FIPS_ENCRYPT_CHECK>) <integer>
+
+This option is used by the OpenSSL FIPS provider.
+
+If required this parameter should be set early via an cipher encrypt init
+function such as EVP_EncryptInit_ex2().
+The default value of 1 causes an error when an encryption operation is triggered.
+Setting this to 0 will ignore the error and set the approved "fips-indicator" to
+0.
+This option breaks FIPS compliance if it causes the approved "fips-indicator"
+to return 0.
 
 =back
 
@@ -1248,8 +1306,9 @@ EVP_DecryptFinal_ex() returns 0 if the decrypt failed or 1 for success.
 EVP_CipherInit_ex2() and EVP_CipherUpdate() return 1 for success and 0 for failure.
 EVP_CipherFinal_ex() returns 0 for a decryption failure or 1 for success.
 
-EVP_Cipher() returns 1 on success or 0 on failure, if the flag
-B<EVP_CIPH_FLAG_CUSTOM_CIPHER> is not set for the cipher.
+EVP_Cipher() returns 1 on success and <= 0 on failure, if the flag
+B<EVP_CIPH_FLAG_CUSTOM_CIPHER> is not set for the cipher, or if the cipher has
+not been initialized via a call to B<EVP_CipherInit_ex2>.
 EVP_Cipher() returns the number of bytes written to I<out> for encryption / decryption, or
 the number of bytes authenticated in a call specifying AAD for an AEAD cipher, if the flag
 B<EVP_CIPH_FLAG_CUSTOM_CIPHER> is set for the cipher.
@@ -1262,7 +1321,7 @@ return an B<EVP_CIPHER> structure or NULL on error.
 EVP_CIPHER_get_nid() and EVP_CIPHER_CTX_get_nid() return a NID.
 
 EVP_CIPHER_get_block_size() and EVP_CIPHER_CTX_get_block_size() return the
-block size.
+block size, or 0 on error.
 
 EVP_CIPHER_get_key_length() and EVP_CIPHER_CTX_get_key_length() return the key
 length.
@@ -1431,7 +1490,7 @@ indicates if the operation was successful. If it does not indicate success
 the authentication operation has failed and any output data B<MUST NOT>
 be used as it is corrupted.
 
-The API does not store the the SIV (Synthetic Initialization Vector) in
+The API does not store the SIV (Synthetic Initialization Vector) in
 the cipher text. Instead, it is stored as the tag within the EVP_CIPHER_CTX.
 The SIV must be retrieved from the context after encryption, and set into
 the context before decryption.
