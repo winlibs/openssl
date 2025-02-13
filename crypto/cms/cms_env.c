@@ -51,15 +51,6 @@ static int cms_get_enveloped_type(const CMS_ContentInfo *cms)
     return ret;
 }
 
-void ossl_cms_env_enc_content_free(const CMS_ContentInfo *cinf)
-{
-    if (cms_get_enveloped_type_simple(cinf) != 0) {
-        CMS_EncryptedContentInfo *ec = ossl_cms_get0_env_enc_content(cinf);
-        if (ec != NULL)
-            OPENSSL_clear_free(ec->key, ec->keylen);
-    }
-}
-
 CMS_EnvelopedData *ossl_cms_get0_enveloped(CMS_ContentInfo *cms)
 {
     if (OBJ_obj2nid(cms->contentType) != NID_pkcs7_enveloped) {
@@ -589,13 +580,6 @@ static int cms_RecipientInfo_ktri_decrypt(CMS_ContentInfo *cms,
 
     if (!ossl_cms_env_asn1_ctrl(ri, 1))
         goto err;
-
-    if (EVP_PKEY_is_a(pkey, "RSA"))
-        /* upper layer CMS code incorrectly assumes that a successful RSA
-         * decryption means that the key matches ciphertext (which never
-         * was the case, implicit rejection or not), so to make it work
-         * disable implicit rejection for RSA keys */
-        EVP_PKEY_CTX_ctrl_str(ktri->pctx, "rsa_pkcs1_implicit_rejection", "0");
 
     if (EVP_PKEY_decrypt(ktri->pctx, NULL, &eklen,
                          ktri->encryptedKey->data,

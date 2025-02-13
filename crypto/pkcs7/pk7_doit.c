@@ -170,13 +170,6 @@ static int pkcs7_decrypt_rinfo(unsigned char **pek, int *peklen,
     if (EVP_PKEY_decrypt_init(pctx) <= 0)
         goto err;
 
-    if (EVP_PKEY_is_a(pkey, "RSA"))
-        /* upper layer pkcs7 code incorrectly assumes that a successful RSA
-         * decryption means that the key matches ciphertext (which never
-         * was the case, implicit rejection or not), so to make it work
-         * disable implicit rejection for RSA keys */
-        EVP_PKEY_CTX_ctrl_str(pctx, "rsa_pkcs1_implicit_rejection", "0");
-
     if (EVP_PKEY_decrypt(pctx, NULL, &eklen,
                          ri->enc_key->data, ri->enc_key->length) <= 0)
         goto err;
@@ -1030,6 +1023,7 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
     STACK_OF(X509_ATTRIBUTE) *sk;
     BIO *btmp;
     EVP_PKEY *pkey;
+    unsigned char *abuf = NULL;
     const PKCS7_CTX *ctx = ossl_pkcs7_get0_ctx(p7);
     OSSL_LIB_CTX *libctx = ossl_pkcs7_ctx_get0_libctx(ctx);
     const char *propq = ossl_pkcs7_ctx_get0_propq(ctx);
@@ -1079,7 +1073,7 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
 
     sk = si->auth_attr;
     if ((sk != NULL) && (sk_X509_ATTRIBUTE_num(sk) != 0)) {
-        unsigned char md_dat[EVP_MAX_MD_SIZE], *abuf = NULL;
+        unsigned char md_dat[EVP_MAX_MD_SIZE];
         unsigned int md_len;
         int alen;
         ASN1_OCTET_STRING *message_digest;
@@ -1121,8 +1115,6 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
         }
         if (!EVP_VerifyUpdate(mdc_tmp, abuf, alen))
             goto err;
-
-        OPENSSL_free(abuf);
     }
 
     os = si->enc_digest;
@@ -1140,6 +1132,7 @@ int PKCS7_signatureVerify(BIO *bio, PKCS7 *p7, PKCS7_SIGNER_INFO *si,
     }
     ret = 1;
  err:
+    OPENSSL_free(abuf);
     EVP_MD_CTX_free(mdc_tmp);
     EVP_MD_free(fetched_md);
     return ret;

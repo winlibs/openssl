@@ -1210,6 +1210,8 @@ static int fix_ecdh_cofactor(enum state state,
         /* The initial value for |ctx->action_type| must not be zero. */
         if (!ossl_assert(ctx->action_type != NONE))
             return 0;
+    } else if (state == POST_PARAMS_TO_CTRL && ctx->action_type == NONE) {
+        ctx->action_type = GET;
     }
 
     if ((ret = default_check(state, translation, ctx)) <= 0)
@@ -1235,6 +1237,8 @@ static int fix_ecdh_cofactor(enum state state,
         }
     } else if (state == PRE_PARAMS_TO_CTRL && ctx->action_type == GET) {
         ctx->p1 = -2;
+    } else if (state == POST_PARAMS_TO_CTRL && ctx->action_type == GET) {
+        ctx->p1 = ret;
     }
 
     return ret;
@@ -2265,12 +2269,6 @@ static const struct translation_st evp_pkey_ctx_translations[] = {
       EVP_PKEY_CTRL_GET_RSA_OAEP_LABEL, NULL, NULL,
       OSSL_ASYM_CIPHER_PARAM_OAEP_LABEL, OSSL_PARAM_OCTET_PTR, NULL },
 
-    { SET, EVP_PKEY_RSA, 0, EVP_PKEY_OP_TYPE_CRYPT,
-      EVP_PKEY_CTRL_RSA_IMPLICIT_REJECTION, NULL,
-      "rsa_pkcs1_implicit_rejection",
-      OSSL_ASYM_CIPHER_PARAM_IMPLICIT_REJECTION, OSSL_PARAM_UNSIGNED_INTEGER,
-      NULL },
-
     { SET, EVP_PKEY_RSA_PSS, 0, EVP_PKEY_OP_TYPE_GEN,
       EVP_PKEY_CTRL_MD, "rsa_pss_keygen_md", NULL,
       OSSL_ALG_PARAM_DIGEST, OSSL_PARAM_UTF8_STRING, fix_md },
@@ -2806,8 +2804,14 @@ static int evp_pkey_ctx_setget_params_to_ctrl(EVP_PKEY_CTX *pctx,
         /*
          * In POST, we pass the return value as p1, allowing the fixup_args
          * function to put it to good use, or maybe affect it.
+         *
+         * NOTE: even though EVP_PKEY_CTX_ctrl return value is documented
+         * as return positive on Success and 0 or negative on falure. There
+         * maybe parameters (e.g. ecdh_cofactor), which actually return 0
+         * as success value. That is why we do POST_PARAMS_TO_CTRL for 0
+         * value as well
          */
-        if (ret > 0) {
+        if (ret >= 0) {
             ctx.p1 = ret;
             fixup(POST_PARAMS_TO_CTRL, translation, &ctx);
             ret = ctx.p1;
