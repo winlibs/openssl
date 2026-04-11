@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -183,8 +183,6 @@ int EVP_PKEY_CTX_get0_rsa_oaep_label(EVP_PKEY_CTX *ctx, unsigned char **label);
 
 #define EVP_PKEY_CTRL_RSA_KEYGEN_PRIMES (EVP_PKEY_ALG_CTRL + 13)
 
-# define EVP_PKEY_CTRL_RSA_IMPLICIT_REJECTION (EVP_PKEY_ALG_CTRL + 14)
-
 #define RSA_PKCS1_PADDING 1
 #define RSA_NO_PADDING 3
 #define RSA_PKCS1_OAEP_PADDING 4
@@ -193,9 +191,6 @@ int EVP_PKEY_CTX_get0_rsa_oaep_label(EVP_PKEY_CTX *ctx, unsigned char **label);
 /* EVP_PKEY_ only */
 #define RSA_PKCS1_PSS_PADDING 6
 #define RSA_PKCS1_WITH_TLS_PADDING 7
-
-/* internal RSA_ only */
-# define RSA_PKCS1_NO_IMPLICIT_REJECT_PADDING 8
 
 #define RSA_PKCS1_PADDING_SIZE 11
 
@@ -328,13 +323,13 @@ struct rsa_pss_params_st {
 DECLARE_ASN1_FUNCTIONS(RSA_PSS_PARAMS)
 DECLARE_ASN1_DUP_FUNCTION(RSA_PSS_PARAMS)
 
-typedef struct rsa_oaep_params_st {
+struct rsa_oaep_params_st {
     X509_ALGOR *hashFunc;
     X509_ALGOR *maskGenFunc;
     X509_ALGOR *pSourceFunc;
     /* Decoded hash algorithm from maskGenFunc */
     X509_ALGOR *maskHash;
-} RSA_OAEP_PARAMS;
+};
 
 DECLARE_ASN1_FUNCTIONS(RSA_OAEP_PARAMS)
 
