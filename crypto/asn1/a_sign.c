@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -47,7 +47,7 @@ int ASN1_sign(i2d_of_void *i2d, X509_ALGOR *algor1, X509_ALGOR *algor2,
             continue;
         if (type->pkey_type == NID_dsaWithSHA1) {
             /*
-             * special case: RFC 2459 tells us to omit 'parameters' with
+             * special case: RFC 3370 tells us to omit 'parameters' with
              * id-dsa-with-sha1
              */
             ASN1_TYPE_free(a->parameter);
@@ -143,6 +143,21 @@ err:
     return rv;
 }
 
+static int replace_algor_contents_from_DER(X509_ALGOR *algor, const unsigned char *aid, size_t len)
+{
+    /* as a workaround for d2i_*() freeing its first argument, using NULL instead: */
+    X509_ALGOR *alg = d2i_X509_ALGOR(NULL, &aid, (long)len);
+    int ret;
+
+    if (alg == NULL) {
+        ERR_raise(ERR_LIB_ASN1, ASN1_R_DECODE_ERROR);
+        return 0;
+    }
+    ret = X509_ALGOR_copy(algor, alg);
+    X509_ALGOR_free(alg);
+    return ret;
+}
+
 int ASN1_item_sign_ctx(const ASN1_ITEM *it, X509_ALGOR *algor1,
     X509_ALGOR *algor2, ASN1_BIT_STRING *signature,
     const void *data, EVP_MD_CTX *ctx)
@@ -186,23 +201,10 @@ int ASN1_item_sign_ctx(const ASN1_ITEM *it, X509_ALGOR *algor1,
             goto err;
         }
 
-        if (algor1 != NULL) {
-            const unsigned char *pp = aid;
-
-            if (d2i_X509_ALGOR(&algor1, &pp, aid_len) == NULL) {
-                ERR_raise(ERR_LIB_ASN1, ERR_R_INTERNAL_ERROR);
-                goto err;
-            }
-        }
-
-        if (algor2 != NULL) {
-            const unsigned char *pp = aid;
-
-            if (d2i_X509_ALGOR(&algor2, &pp, aid_len) == NULL) {
-                ERR_raise(ERR_LIB_ASN1, ERR_R_INTERNAL_ERROR);
-                goto err;
-            }
-        }
+        if (algor1 != NULL && !replace_algor_contents_from_DER(algor1, aid, aid_len))
+            goto err;
+        if (algor2 != NULL && !replace_algor_contents_from_DER(algor2, aid, aid_len))
+            goto err;
 
         rv = 3;
     } else if (pkey->ameth->item_sign) {
@@ -274,7 +276,7 @@ int ASN1_item_sign_ctx(const ASN1_ITEM *it, X509_ALGOR *algor1,
         ERR_raise(ERR_LIB_ASN1, ERR_R_EVP_LIB);
         goto err;
     }
-    ASN1_STRING_set0(signature, buf_out, outl);
+    ASN1_STRING_set0(signature, buf_out, (int)outl);
     buf_out = NULL;
     /*
      * In the interests of compatibility, I'll make sure that the bit string
@@ -284,5 +286,5 @@ int ASN1_item_sign_ctx(const ASN1_ITEM *it, X509_ALGOR *algor1,
 err:
     OPENSSL_clear_free((char *)buf_in, inl);
     OPENSSL_clear_free((char *)buf_out, outll);
-    return outl;
+    return (int)outl;
 }

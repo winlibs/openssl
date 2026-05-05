@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -1851,8 +1851,8 @@ static int test_d2i_AutoPrivateKey_ex(int i)
     BIGNUM *priv_bn = NULL;
 
     p = input;
-    if (!TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &p, input_len, mainctx,
-                      NULL))
+    if (!TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &p, (long)input_len,
+                      mainctx, NULL))
         || !TEST_ptr_eq(p, input + input_len)
         || !TEST_int_eq(EVP_PKEY_get_id(pkey), expected_id))
         goto done;
@@ -2010,7 +2010,7 @@ static int test_d2i_PrivateKey_ex(int testid)
 
     if (!TEST_ptr(provider = OSSL_PROVIDER_load(NULL, "default")))
         goto err;
-    if (!TEST_ptr(key_bio = BIO_new_mem_buf(keydata[id].kder, keydata[id].size)))
+    if (!TEST_ptr(key_bio = BIO_new_mem_buf(keydata[id].kder, (int)keydata[id].size)))
         goto err;
     if (!TEST_ptr_null(pkey = PEM_read_bio_PrivateKey(key_bio, NULL, NULL, NULL)))
         goto err;
@@ -2037,7 +2037,8 @@ static int test_PEM_read_bio_negative(int testid)
     BIO *key_bio = NULL;
     EVP_PKEY *pkey = NULL;
 
-    if (!TEST_ptr(key_bio = BIO_new_mem_buf(keydata[testid].kder, keydata[testid].size)))
+    if (!TEST_ptr(key_bio = BIO_new_mem_buf(keydata[testid].kder,
+                      (int)keydata[testid].size)))
         goto err;
     ERR_clear_error();
     if (!TEST_ptr_null(pkey = PEM_read_bio_PrivateKey(key_bio, NULL, NULL, NULL)))
@@ -3090,7 +3091,7 @@ static int do_check_bn(OSSL_PARAM params[], const char *key,
 
     ret = TEST_ptr(p = OSSL_PARAM_locate(params, key))
         && TEST_true(OSSL_PARAM_get_BN(p, &bn))
-        && TEST_int_gt(len = BN_bn2binpad(bn, buffer, expected_len), 0)
+        && TEST_int_gt(len = BN_bn2binpad(bn, buffer, (int)expected_len), 0)
         && TEST_mem_eq(expected, expected_len, buffer, len);
     BN_free(bn);
     return ret;
@@ -3248,7 +3249,7 @@ static int test_pkey_todata_null(void)
     int ret = 0;
     const unsigned char *pdata = keydata[0].kder;
 
-    ret = TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, keydata[0].size,
+    ret = TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, (long)keydata[0].size,
                        mainctx, NULL))
         && TEST_int_eq(EVP_PKEY_todata(NULL, EVP_PKEY_KEYPAIR, &params), 0)
         && TEST_int_eq(EVP_PKEY_todata(pkey, EVP_PKEY_KEYPAIR, NULL), 0);
@@ -3271,7 +3272,7 @@ static int test_pkey_export_null(void)
     int ret = 0;
     const unsigned char *pdata = keydata[0].kder;
 
-    ret = TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, keydata[0].size,
+    ret = TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, (long)keydata[0].size,
                        mainctx, NULL))
         && TEST_int_eq(EVP_PKEY_export(NULL, EVP_PKEY_KEYPAIR,
                            test_pkey_export_cb, NULL),
@@ -3289,7 +3290,7 @@ static int test_pkey_export(void)
 #endif
     int ret = 1;
     const unsigned char *pdata = keydata[0].kder;
-    int pdata_len = keydata[0].size;
+    int pdata_len = (int)keydata[0].size;
 
     if (!TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, pdata_len,
                       mainctx, NULL))
@@ -3303,15 +3304,16 @@ static int test_pkey_export(void)
 #ifndef OPENSSL_NO_DEPRECATED_3_0
     /* Now, try with a legacy key */
     pdata = keydata[0].kder;
-    pdata_len = keydata[0].size;
-    if (!TEST_ptr(rsa = d2i_RSAPrivateKey(NULL, &pdata, pdata_len))
-        || !TEST_ptr(pkey = EVP_PKEY_new())
-        || !TEST_true(EVP_PKEY_assign_RSA(pkey, rsa))
+    pdata_len = (int)keydata[0].size;
+    if (!TEST_ptr(pkey = EVP_PKEY_new())
+        || !TEST_ptr(rsa = d2i_RSAPrivateKey(NULL, &pdata, pdata_len))
+        || !TEST_true(EVP_PKEY_set1_RSA(pkey, rsa))
         || !TEST_true(EVP_PKEY_export(pkey, EVP_PKEY_KEYPAIR,
             test_pkey_export_cb, pkey))
         || !TEST_false(EVP_PKEY_export(pkey, EVP_PKEY_KEYPAIR,
             test_pkey_export_cb, NULL)))
         ret = 0;
+    RSA_free(rsa);
     EVP_PKEY_free(pkey);
 #endif
     return ret;
@@ -3336,14 +3338,14 @@ static int test_rsa_pss_sign(void)
         (char *)mdname, 0);
     sig_params[2] = OSSL_PARAM_construct_end();
 
-    ret = TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, keydata[0].size,
+    ret = TEST_ptr(pkey = d2i_AutoPrivateKey_ex(NULL, &pdata, (long)keydata[0].size,
                        mainctx, NULL))
         && TEST_ptr(pctx = EVP_PKEY_CTX_new_from_pkey(mainctx, pkey, NULL))
         && TEST_int_gt(EVP_PKEY_sign_init_ex(pctx, sig_params), 0)
         && TEST_int_gt(EVP_PKEY_sign(pctx, NULL, &sig_len, mdbuf,
                            sizeof(mdbuf)),
             0)
-        && TEST_int_gt(sig_len, 0)
+        && TEST_size_t_gt(sig_len, 0)
         && TEST_ptr(sig = OPENSSL_malloc(sig_len))
         && TEST_int_gt(EVP_PKEY_sign(pctx, sig, &sig_len, mdbuf,
                            sizeof(mdbuf)),
@@ -3423,6 +3425,75 @@ end:
     EVP_MD_free(md);
     EVP_MD_CTX_free(inctx);
     EVP_MD_CTX_free(outctx);
+    OSSL_LIB_CTX_free(ctx);
+    return ret;
+}
+
+static int test_evp_md_ctx_serialize(int tstid)
+{
+    static const char *algs[] = {
+        "SHA224", "SHA256", "SHA256-192",
+        "SHA384", "SHA512", "SHA512-224", "SHA512-256",
+        "SHA3-224", "SHA3-256", "SHA3-384", "SHA3-512",
+        "KECCAK-KMAC-128", "KECCAK-KMAC-256"
+    };
+    OSSL_LIB_CTX *ctx = NULL;
+    EVP_MD_CTX *mdctx1 = NULL, *mdctx2 = NULL;
+    EVP_MD *md = NULL;
+    unsigned char *buf = NULL;
+    size_t buflen;
+    size_t tmplen;
+    unsigned char d1[EVP_MAX_MD_SIZE], d2[EVP_MAX_MD_SIZE];
+    unsigned int d1_len, d2_len;
+    int ret = 0;
+    const char *data1 = "some data";
+    const char *data2 = "some more data";
+
+    if (!TEST_ptr(ctx = OSSL_LIB_CTX_new())
+        || !TEST_ptr(md = EVP_MD_fetch(ctx, algs[tstid], NULL)))
+        goto end;
+
+    mdctx1 = EVP_MD_CTX_new();
+    mdctx2 = EVP_MD_CTX_new();
+
+    /* Initiate a digest with data */
+    if (!TEST_ptr(mdctx2) || !TEST_ptr(mdctx1)
+        || !TEST_true(EVP_DigestInit_ex2(mdctx1, md, NULL))
+        || !TEST_true(EVP_DigestUpdate(mdctx1, data1, strlen(data1))))
+        goto end;
+
+    /* Get required buffer size and serialize */
+    if (!TEST_true(EVP_MD_CTX_serialize(mdctx1, NULL, &buflen))
+        || !TEST_ptr(buf = OPENSSL_malloc(buflen))
+        || !TEST_true(EVP_MD_CTX_serialize(mdctx1, buf, &buflen)))
+        goto end;
+
+    /* Deserialize */
+    if (!TEST_true(EVP_DigestInit_ex2(mdctx2, md, NULL))
+        || !TEST_true(EVP_MD_CTX_deserialize(mdctx2, buf, buflen)))
+        goto end;
+
+    /* Test that updating in parallel will now yield the same values */
+    if (!TEST_true(EVP_DigestUpdate(mdctx1, data2, strlen(data2)))
+        || !TEST_true(EVP_DigestUpdate(mdctx2, data2, strlen(data2)))
+        || !TEST_true(EVP_DigestFinal_ex(mdctx1, d1, &d1_len))
+        || !TEST_true(EVP_DigestFinal_ex(mdctx2, d2, &d2_len))
+        || !TEST_uint_eq(d1_len, d2_len)
+        || !TEST_mem_eq(d1, d1_len, d2, d2_len))
+        goto end;
+
+    /* Check that serialization fails on finalized contexts */
+    if (!TEST_false(EVP_MD_CTX_serialize(mdctx1, NULL, &tmplen))
+        || !TEST_false(EVP_MD_CTX_deserialize(mdctx1, buf, buflen)))
+        goto end;
+
+    ret = 1;
+
+end:
+    OPENSSL_free(buf);
+    EVP_MD_CTX_free(mdctx1);
+    EVP_MD_CTX_free(mdctx2);
+    EVP_MD_free(md);
     OSSL_LIB_CTX_free(ctx);
     return ret;
 }
@@ -3522,6 +3593,7 @@ int setup_tests(void)
     ADD_TEST(test_evp_md_ctx_dup);
     ADD_TEST(test_evp_md_ctx_copy);
     ADD_TEST(test_evp_md_ctx_copy2);
+    ADD_ALL_TESTS(test_evp_md_ctx_serialize, 13);
     ADD_ALL_TESTS(test_provider_unload_effective, 2);
 #if !defined OPENSSL_NO_DES && !defined OPENSSL_NO_MD5
     ADD_TEST(test_evp_pbe_alg_add);

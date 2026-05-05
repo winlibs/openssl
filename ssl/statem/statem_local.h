@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -148,7 +148,7 @@ __owur MSG_PROCESS_RETURN tls_process_certificate_request(SSL_CONNECTION *s,
     PACKET *pkt);
 __owur MSG_PROCESS_RETURN tls_process_new_session_ticket(SSL_CONNECTION *s,
     PACKET *pkt);
-__owur int tls_process_cert_status_body(SSL_CONNECTION *s, PACKET *pkt);
+__owur int tls_process_cert_status_body(SSL_CONNECTION *s, size_t chainidx, PACKET *pkt);
 __owur MSG_PROCESS_RETURN tls_process_cert_status(SSL_CONNECTION *s,
     PACKET *pkt);
 __owur MSG_PROCESS_RETURN tls_process_server_done(SSL_CONNECTION *s,
@@ -168,7 +168,7 @@ __owur int ssl_do_client_cert_cb(SSL_CONNECTION *s, X509 **px509,
 __owur CON_FUNC_RETURN tls_construct_client_key_exchange(SSL_CONNECTION *s,
     WPACKET *pkt);
 __owur int tls_client_key_exchange_post_work(SSL_CONNECTION *s);
-__owur int tls_construct_cert_status_body(SSL_CONNECTION *s, WPACKET *pkt);
+__owur int tls_construct_cert_status_body(SSL_CONNECTION *s, OCSP_RESPONSE *resp, WPACKET *pkt);
 __owur CON_FUNC_RETURN tls_construct_cert_status(SSL_CONNECTION *s,
     WPACKET *pkt);
 __owur MSG_PROCESS_RETURN tls_process_key_exchange(SSL_CONNECTION *s,
@@ -570,3 +570,15 @@ int tls_parse_ctos_server_cert_type(SSL_CONNECTION *sc, PACKET *pkt,
 int tls_parse_stoc_server_cert_type(SSL_CONNECTION *s, PACKET *pkt,
     unsigned int context,
     X509 *x, size_t chainidx);
+#ifndef OPENSSL_NO_ECH
+EXT_RETURN tls_construct_ctos_ech(SSL_CONNECTION *s, WPACKET *pkt,
+    unsigned int context, X509 *x,
+    size_t chainidx);
+int tls_parse_ctos_ech(SSL_CONNECTION *s, PACKET *pkt, unsigned int context,
+    X509 *x, size_t chainidx);
+EXT_RETURN tls_construct_stoc_ech(SSL_CONNECTION *s, WPACKET *pkt,
+    unsigned int context, X509 *x,
+    size_t chainidx);
+int tls_parse_stoc_ech(SSL_CONNECTION *s, PACKET *pkt, unsigned int context,
+    X509 *x, size_t chainidx);
+#endif

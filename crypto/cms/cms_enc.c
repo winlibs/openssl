@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -111,7 +111,7 @@ BIO *ossl_cms_EncryptedContent_init_bio(CMS_EncryptedContentInfo *ec,
             piv = aparams.iv;
             if (ec->taglen > 0
                 && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG,
-                       ec->taglen, ec->tag)
+                       (int)ec->taglen, ec->tag)
                     <= 0) {
                 ERR_raise(ERR_LIB_CMS, CMS_R_CIPHER_AEAD_SET_TAG_ERROR);
                 goto err;
@@ -144,7 +144,7 @@ BIO *ossl_cms_EncryptedContent_init_bio(CMS_EncryptedContentInfo *ec,
 
     if (ec->keylen != tkeylen) {
         /* If necessary set key length */
-        if (EVP_CIPHER_CTX_set_key_length(ctx, ec->keylen) <= 0) {
+        if (EVP_CIPHER_CTX_set_key_length(ctx, (int)ec->keylen) <= 0) {
             /*
              * Only reveal failure if debugging so we don't leak information
              * which may be useful in MMA.
@@ -177,12 +177,17 @@ BIO *ossl_cms_EncryptedContent_init_bio(CMS_EncryptedContentInfo *ec,
             memcpy(aparams.iv, piv, ivlen);
             aparams.iv_len = ivlen;
             aparams.tag_len = EVP_CIPHER_CTX_get_tag_length(ctx);
-            if (aparams.tag_len <= 0)
+            if (aparams.tag_len <= 0) {
+                ASN1_TYPE_free(calg->parameter);
+                calg->parameter = NULL;
                 goto err;
+            }
         }
 
         if (evp_cipher_param_to_asn1_ex(ctx, calg->parameter, &aparams) <= 0) {
             ERR_raise(ERR_LIB_CMS, CMS_R_CIPHER_PARAMETER_INITIALISATION_ERROR);
+            ASN1_TYPE_free(calg->parameter);
+            calg->parameter = NULL;
             goto err;
         }
         /* If parameter type not set omit parameter */
@@ -260,6 +265,7 @@ int CMS_EncryptedData_set1_key(CMS_ContentInfo *cms, const EVP_CIPHER *ciph,
 BIO *ossl_cms_EncryptedData_init_bio(const CMS_ContentInfo *cms)
 {
     CMS_EncryptedData *enc = cms->d.encryptedData;
+
     if (enc->encryptedContentInfo->cipher && enc->unprotectedAttrs)
         enc->version = 2;
     return ossl_cms_EncryptedContent_init_bio(enc->encryptedContentInfo,

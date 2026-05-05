@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -166,7 +166,7 @@ static void generate_p12(PKCS12_BUILDER *pb, const PKCS12_ENC *mac)
         else
             md = EVP_MD_fetch(test_ctx, OBJ_nid2sn(mac->nid), test_propq);
 
-        if (!TEST_true(PKCS12_set_mac(p12, mac->pass, strlen(mac->pass),
+        if (!TEST_true(PKCS12_set_mac(p12, mac->pass, (int)strlen(mac->pass),
                 NULL, 0, mac->iter, md))) {
             pb->success = 0;
             goto err;
@@ -254,7 +254,7 @@ err:
 static int check_p12_mac(PKCS12 *p12, const PKCS12_ENC *mac)
 {
     return TEST_true(PKCS12_mac_present(p12))
-        && TEST_true(PKCS12_verify_mac(p12, mac->pass, strlen(mac->pass)));
+        && TEST_true(PKCS12_verify_mac(p12, mac->pass, (int)strlen(mac->pass)));
 }
 
 /* -------------------------------------------------------------------------
@@ -307,7 +307,7 @@ static STACK_OF(PKCS12_SAFEBAG) *decode_contentinfo(STACK_OF(PKCS7) *safes, int 
     if (enc) {
         if (!TEST_int_eq(bagnid, NID_pkcs7_encrypted))
             goto err;
-        bags = PKCS12_unpack_p7encdata(p7, enc->pass, strlen(enc->pass));
+        bags = PKCS12_unpack_p7encdata(p7, enc->pass, (int)strlen(enc->pass));
     } else {
         if (!TEST_int_eq(bagnid, NID_pkcs7_data))
             goto err;
@@ -345,7 +345,7 @@ static int add_attributes(PKCS12_SAFEBAG *bag, const PKCS12_ATTR *attr)
                 goto err;
         } else if (attr_nid == NID_localKeyID) {
             if (!TEST_true(PKCS12_add_localkeyid(bag, (unsigned char *)p_attr->value,
-                    strlen(p_attr->value))))
+                    (int)strlen(p_attr->value))))
                 goto err;
         } else if (attr_nid == NID_oracle_jdk_trustedkeyusage) {
             attrs = (STACK_OF(X509_ATTRIBUTE) *)PKCS12_SAFEBAG_get0_attrs(bag);
@@ -357,7 +357,7 @@ static int add_attributes(PKCS12_SAFEBAG *bag, const PKCS12_ATTR *attr)
             /* Custom attribute values limited to ASCII in these tests */
             if (!TEST_true(PKCS12_add1_attr_by_txt(bag, p_attr->oid, MBSTRING_ASC,
                     (unsigned char *)p_attr->value,
-                    strlen(p_attr->value))))
+                    (int)strlen(p_attr->value))))
                 goto err;
         }
         p_attr++;
@@ -443,7 +443,8 @@ void add_secretbag(PKCS12_BUILDER *pb, int secret_nid, const char *secret,
 
     TEST_info("Adding secret <%s>", secret);
 
-    bag = PKCS12_add_secret(&pb->bags, secret_nid, (const unsigned char *)secret, strlen(secret));
+    bag = PKCS12_add_secret(&pb->bags, secret_nid,
+        (const unsigned char *)secret, (int)strlen(secret));
     if (!TEST_ptr(bag)) {
         pb->success = 0;
         return;
@@ -466,22 +467,22 @@ static int check_asn1_string(const ASN1_TYPE *av, const char *txt)
 
     switch (av->type) {
     case V_ASN1_BMPSTRING:
-        value = OPENSSL_uni2asc(av->value.bmpstring->data,
-            av->value.bmpstring->length);
+        value = OPENSSL_uni2asc(ASN1_STRING_get0_data(av->value.bmpstring),
+            ASN1_STRING_length(av->value.bmpstring));
         if (!TEST_str_eq(txt, (char *)value))
             goto err;
         break;
 
     case V_ASN1_UTF8STRING:
-        if (!TEST_mem_eq(txt, strlen(txt), (char *)av->value.utf8string->data,
-                av->value.utf8string->length))
+        if (!TEST_mem_eq(txt, strlen(txt), ASN1_STRING_get0_data(av->value.utf8string),
+                ASN1_STRING_length(av->value.utf8string)))
             goto err;
         break;
 
     case V_ASN1_OCTET_STRING:
         if (!TEST_mem_eq(txt, strlen(txt),
-                (char *)av->value.octet_string->data,
-                av->value.octet_string->length))
+                (char *)ASN1_STRING_get0_data(av->value.octet_string),
+                ASN1_STRING_length(av->value.octet_string)))
             goto err;
         break;
 
@@ -499,13 +500,13 @@ static int check_attrs(const STACK_OF(X509_ATTRIBUTE) *bag_attrs, const PKCS12_A
 {
     int ret = 0;
     X509_ATTRIBUTE *attr;
-    ASN1_TYPE *av;
+    const ASN1_TYPE *av;
     int i, j;
     char attr_txt[100];
 
     for (i = 0; i < sk_X509_ATTRIBUTE_num(bag_attrs); i++) {
         const PKCS12_ATTR *p_attr = attrs;
-        ASN1_OBJECT *attr_obj;
+        const ASN1_OBJECT *attr_obj;
 
         attr = sk_X509_ATTRIBUTE_value(bag_attrs, i);
         attr_obj = X509_ATTRIBUTE_get0_object(attr);
@@ -605,9 +606,10 @@ void check_keybag(PKCS12_BUILDER *pb, const unsigned char *bytes, int len,
 
     case NID_pkcs8ShroudedKeyBag:
         if (legacy)
-            p8 = PKCS12_decrypt_skey(bag, enc->pass, strlen(enc->pass));
+            p8 = PKCS12_decrypt_skey(bag, enc->pass, (int)strlen(enc->pass));
         else
-            p8 = PKCS12_decrypt_skey_ex(bag, enc->pass, strlen(enc->pass), test_ctx, test_propq);
+            p8 = PKCS12_decrypt_skey_ex(bag, enc->pass, (int)strlen(enc->pass),
+                test_ctx, test_propq);
         if (!TEST_ptr(p8)) {
             pb->success = 0;
             goto err;

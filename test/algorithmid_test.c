@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -20,7 +20,7 @@ static const char *pubkey_filename = NULL; /* For test_spki_file() */
 
 #define ALGORITHMID_NAME "algorithm-id"
 
-static int test_spki_aid(X509_PUBKEY *pubkey, const char *filename)
+static int test_spki_aid(const X509_PUBKEY *pubkey, const char *filename)
 {
     const ASN1_OBJECT *oid;
     X509_ALGOR *alg = NULL;
@@ -103,7 +103,7 @@ end:
 
 static int test_x509_spki_aid(X509 *cert, const char *filename)
 {
-    X509_PUBKEY *pubkey = X509_get_X509_PUBKEY(cert);
+    const X509_PUBKEY *pubkey = X509_get_X509_PUBKEY(cert);
 
     return test_spki_aid(pubkey, filename);
 }
@@ -277,7 +277,8 @@ const OPTIONS *test_get_options(void)
 int setup_tests(void)
 {
     OPTION_CHOICE o;
-    int n, x509 = 0, spki = 0, testcount = 0;
+    size_t n;
+    int x509 = 0, spki = 0, testcount = 0;
 
     while ((o = opt_next()) != OPT_EOF) {
         switch (o) {

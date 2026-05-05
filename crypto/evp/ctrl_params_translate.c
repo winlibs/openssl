@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -474,7 +474,8 @@ static int default_fixup_args(enum state state,
                         == NULL)
                         return 0;
                     if (BN_bn2nativepad(ctx->p2,
-                            ctx->allocated_buf, ctx->buflen)
+                            ctx->allocated_buf,
+                            (int)ctx->buflen)
                         < 0) {
                         OPENSSL_free(ctx->allocated_buf);
                         ctx->allocated_buf = NULL;
@@ -776,10 +777,10 @@ static int fix_cipher_md(enum state state,
         ctx->p2 = (char *)(ctx->p2 == NULL
                 ? OBJ_nid2sn(ctx->p1)
                 : get_name(ctx->p2));
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     } else if (state == POST_PARAMS_TO_CTRL && ctx->action_type == OSSL_ACTION_GET) {
         ctx->p2 = (ctx->p2 == NULL ? "" : (char *)get_name(ctx->p2));
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     }
 
     if ((ret = default_fixup_args(state, translation, ctx)) <= 0)
@@ -897,7 +898,7 @@ static int fix_kdf_type(enum state state,
             }
         if (ret <= 0)
             goto end;
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     }
 
     if ((ret = default_fixup_args(state, translation, ctx)) <= 0)
@@ -1080,7 +1081,7 @@ static int fix_dh_paramgen_type(enum state state,
             ERR_raise(ERR_LIB_EVP, EVP_R_INVALID_VALUE);
             return 0;
         }
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     }
 
     return default_fixup_args(state, translation, ctx);
@@ -1337,7 +1338,7 @@ static int fix_rsa_padding_mode(enum state state,
             return -2;
         }
         ctx->p2 = str_value_map[i].ptr;
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     }
 
     if ((ret = default_fixup_args(state, translation, ctx)) <= 0)
@@ -1416,7 +1417,7 @@ static int fix_rsa_pss_saltlen(enum state state,
             ctx->name_buf[sizeof(ctx->name_buf) - 1] = '\0';
         }
         ctx->p2 = ctx->name_buf;
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     }
 
     if ((ret = default_fixup_args(state, translation, ctx)) <= 0)
@@ -1475,7 +1476,7 @@ static int fix_hkdf_mode(enum state state,
         if (i == OSSL_NELEM(str_value_map))
             return 0;
         ctx->p2 = str_value_map[i].ptr;
-        ctx->p1 = strlen(ctx->p2);
+        ctx->p1 = (int)strlen(ctx->p2);
     }
 
     if ((ret = default_fixup_args(state, translation, ctx)) <= 0)
@@ -1554,7 +1555,7 @@ static int get_payload_group_name(enum state state,
     if (ctx->p2 == NULL)
         return 1;
 
-    ctx->p1 = strlen(ctx->p2);
+    ctx->p1 = (int)strlen(ctx->p2);
     return default_fixup_args(state, translation, ctx);
 }
 
@@ -1822,6 +1823,36 @@ static int get_ec_decoded_from_explicit_params(enum state state,
             ERR_raise(ERR_LIB_EVP, EVP_R_INVALID_KEY);
             return 0;
         }
+        break;
+#endif
+    default:
+        ERR_raise(ERR_LIB_EVP, EVP_R_UNSUPPORTED_KEY_TYPE);
+        return 0;
+    }
+
+    return get_payload_int(state, translation, ctx, val);
+}
+
+static int get_ec_field_degree(enum state state,
+    const struct translation_st *translation,
+    struct translation_ctx_st *ctx)
+{
+#ifndef OPENSSL_NO_EC
+    const EC_KEY *key;
+    const EC_GROUP *group;
+#endif
+    EVP_PKEY *pkey = ctx->p2;
+    int val = 0;
+
+    switch (EVP_PKEY_base_id(pkey)) {
+#ifndef OPENSSL_NO_EC
+    case EVP_PKEY_EC:
+        if ((key = EVP_PKEY_get0_EC_KEY(pkey)) == NULL
+            || (group = EC_KEY_get0_group(key)) == NULL) {
+            ERR_raise(ERR_LIB_EVP, EVP_R_INVALID_KEY);
+            return 0;
+        }
+        val = EC_GROUP_get_degree(group);
         break;
 #endif
     default:
@@ -2567,6 +2598,9 @@ static const struct translation_st evp_pkey_translations[] = {
     { OSSL_ACTION_GET, -1, -1, -1, 0, NULL, NULL,
         OSSL_PKEY_PARAM_EC_DECODED_FROM_EXPLICIT_PARAMS, OSSL_PARAM_INTEGER,
         get_ec_decoded_from_explicit_params },
+    { OSSL_ACTION_GET, -1, -1, -1, 0, NULL, NULL,
+        OSSL_PKEY_PARAM_EC_FIELD_DEGREE, OSSL_PARAM_INTEGER,
+        get_ec_field_degree },
 };
 
 static const struct translation_st *
@@ -2716,11 +2750,6 @@ int evp_pkey_ctx_ctrl_to_param(EVP_PKEY_CTX *pctx,
         ERR_raise(ERR_LIB_EVP, EVP_R_COMMAND_NOT_SUPPORTED);
         return -2;
     }
-
-    if (pctx->pmeth != NULL
-        && pctx->pmeth->pkey_id != translation->keytype1
-        && pctx->pmeth->pkey_id != translation->keytype2)
-        return -1;
 
     if (translation->fixup_args != NULL)
         fixup = translation->fixup_args;
@@ -2939,7 +2968,7 @@ static int evp_pkey_setget_params_to_ctrl(const EVP_PKEY *pkey,
          * on fixup_args to do the whole work.  Also, we currently only
          * support getting.
          */
-        if (!ossl_assert(translation != NULL)
+        if (translation == NULL
             || !ossl_assert(translation->action_type == OSSL_ACTION_GET)
             || !ossl_assert(translation->fixup_args != NULL)) {
             return -2;

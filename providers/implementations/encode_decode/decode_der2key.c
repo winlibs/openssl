@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -40,10 +40,12 @@
 #include "openssl/obj_mac.h"
 #include "prov/bio.h"
 #include "prov/implementations.h"
-#include "endecoder_local.h"
+#include "prov/endecoder_local.h"
 #include "internal/nelem.h"
-#include "ml_dsa_codecs.h"
-#include "ml_kem_codecs.h"
+#include "prov/ml_dsa_codecs.h"
+#include "prov/ml_kem_codecs.h"
+#include "prov/lms_codecs.h"
+#include "providers/implementations/encode_decode/decode_der2key.inc"
 
 #ifndef OPENSSL_NO_SLH_DSA
 typedef struct {
@@ -171,21 +173,21 @@ der2key_newctx(void *provctx, const struct keytype_desc_st *desc)
 
 static const OSSL_PARAM *der2key_settable_ctx_params(ossl_unused void *provctx)
 {
-    static const OSSL_PARAM settables[] = {
-        OSSL_PARAM_utf8_string(OSSL_DECODER_PARAM_PROPERTIES, NULL, 0),
-        OSSL_PARAM_END
-    };
-    return settables;
+    return der2key_set_ctx_params_list;
 }
 
 static int der2key_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     struct der2key_ctx_st *ctx = vctx;
-    const OSSL_PARAM *p;
-    char *str = ctx->propq;
+    struct der2key_set_ctx_params_st p;
+    char *str;
 
-    p = OSSL_PARAM_locate_const(params, OSSL_DECODER_PARAM_PROPERTIES);
-    if (p != NULL && !OSSL_PARAM_get_utf8_string(p, &str, sizeof(ctx->propq)))
+    if (ctx == NULL || !der2key_set_ctx_params_decoder(params, &p))
+        return 0;
+
+    str = ctx->propq;
+    if (p.propq != NULL
+        && !OSSL_PARAM_get_utf8_string(p.propq, &str, sizeof(ctx->propq)))
         return 0;
 
     return 1;
@@ -1000,6 +1002,25 @@ static ossl_inline void *ml_dsa_d2i_PUBKEY(const uint8_t **der, long der_len,
 
 /* ---------------------------------------------------------------------- */
 
+#ifndef OPENSSL_NO_LMS
+#define lms_evp_type EVP_PKEY_HSS_LMS
+#define lms_free (free_key_fn *)ossl_lms_key_free
+#define lms_check NULL
+#define lms_adjust NULL
+
+static ossl_inline void *lms_d2i_PUBKEY(const uint8_t **der, long der_len,
+    struct der2key_ctx_st *ctx)
+{
+    LMS_KEY *key;
+
+    key = ossl_lms_d2i_PUBKEY(*der, der_len, ctx->provctx);
+    if (key != NULL)
+        *der += der_len;
+    return key;
+}
+#endif
+/* ---------------------------------------------------------------------- */
+
 /*
  * The DO_ macros help define the selection mask and the method functions
  * for each kind of object we want to decode.
@@ -1301,4 +1322,8 @@ MAKE_DECODER("ML-DSA-65", ml_dsa_65, ml_dsa_65, PrivateKeyInfo);
 MAKE_DECODER("ML-DSA-65", ml_dsa_65, ml_dsa_65, SubjectPublicKeyInfo);
 MAKE_DECODER("ML-DSA-87", ml_dsa_87, ml_dsa_87, PrivateKeyInfo);
 MAKE_DECODER("ML-DSA-87", ml_dsa_87, ml_dsa_87, SubjectPublicKeyInfo);
+#endif
+
+#ifndef OPENSSL_NO_LMS
+MAKE_DECODER("LMS", lms, lms, SubjectPublicKeyInfo);
 #endif

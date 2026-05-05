@@ -7,17 +7,8 @@
  * https://www.openssl.org/source/license.html
  */
 
-/*
- * We need access to the deprecated low level ENGINE APIs for legacy purposes
- * when the deprecated calls are not hidden
- */
-#ifndef OPENSSL_NO_DEPRECATED_3_0
-#define OPENSSL_SUPPRESS_DEPRECATED
-#endif
-
 #include <string.h>
 
-#include <openssl/engine.h>
 #include "internal/e_os.h"
 #include "internal/nelem.h"
 #include "ssltestlib.h"
@@ -249,7 +240,7 @@ static int tls_dump_gets(BIO *bio, char *buf, int size)
 
 static int tls_dump_puts(BIO *bio, const char *str)
 {
-    return tls_dump_write(bio, str, strlen(str));
+    return tls_dump_write(bio, str, (int)strlen(str));
 }
 
 struct mempacket_st {
@@ -618,7 +609,7 @@ int mempacket_test_inject(BIO *bio, const char *in, int inl, int pktnum,
          */
         if (duprec && i != 2) {
             memcpy(thispkt->data, in + len, inl - len);
-            thispkt->len = inl - len;
+            thispkt->len = inl - (int)len;
         } else {
             memcpy(thispkt->data, in, inl);
             thispkt->len = inl;
@@ -746,7 +737,7 @@ static int mempacket_test_gets(BIO *bio, char *buf, int size)
 
 static int mempacket_test_puts(BIO *bio, const char *str)
 {
-    return mempacket_test_write(bio, str, strlen(str));
+    return mempacket_test_write(bio, str, (int)strlen(str));
 }
 
 static int always_retry_new(BIO *bi);
@@ -1415,7 +1406,7 @@ int create_ssl_connection_ex(SSL *serverssl, SSL *clientssl, int want,
      */
     for (i = 0; i < 2; i++) {
         if (SSL_read_ex(clientssl, &buf, sizeof(buf), &readbytes) > 0) {
-            if (!TEST_ulong_eq(readbytes, 0))
+            if (!TEST_size_t_eq(readbytes, 0))
                 return 0;
         } else if (!TEST_int_eq(SSL_get_error(clientssl, 0),
                        SSL_ERROR_WANT_READ)) {
@@ -1524,28 +1515,4 @@ end:
     BIO_free(certbio);
     X509_free(chaincert);
     return ret;
-}
-
-ENGINE *load_dasync(void)
-{
-#if !defined(OPENSSL_NO_TLS1_2) && !defined(OPENSSL_NO_DYNAMIC_ENGINE)
-    ENGINE *e;
-
-    if (!TEST_ptr(e = ENGINE_by_id("dasync")))
-        return NULL;
-
-    if (!TEST_true(ENGINE_init(e))) {
-        ENGINE_free(e);
-        return NULL;
-    }
-
-    if (!TEST_true(ENGINE_register_ciphers(e))) {
-        ENGINE_free(e);
-        return NULL;
-    }
-
-    return e;
-#else
-    return NULL;
-#endif
 }

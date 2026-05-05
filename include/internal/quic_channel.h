@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -283,7 +283,6 @@ void ossl_quic_channel_on_new_conn_id(QUIC_CHANNEL *ch,
 
 /* Temporarily exposed during QUIC_PORT transition. */
 int ossl_quic_channel_on_new_conn(QUIC_CHANNEL *ch, const BIO_ADDR *peer,
-    const QUIC_CONN_ID *peer_scid,
     const QUIC_CONN_ID *peer_dcid);
 
 /* For use by QUIC_PORT. You should not need to call this directly. */
@@ -317,6 +316,9 @@ OSSL_STATM *ossl_quic_channel_get_statm(QUIC_CHANNEL *ch);
 /* Gets the TLS handshake layer used with the channel. */
 SSL *ossl_quic_channel_get0_tls(QUIC_CHANNEL *ch);
 
+/* Sets the TLS handshake layer used for the channel */
+void ossl_quic_channel_set0_tls(QUIC_CHANNEL *ch, SSL *ssl);
+
 /* Gets the channels short header connection id length */
 size_t ossl_quic_channel_get_short_header_conn_id_len(QUIC_CHANNEL *ch);
 
@@ -343,6 +345,8 @@ int ossl_quic_channel_is_terminated(const QUIC_CHANNEL *ch);
 int ossl_quic_channel_is_active(const QUIC_CHANNEL *ch);
 int ossl_quic_channel_is_handshake_complete(const QUIC_CHANNEL *ch);
 int ossl_quic_channel_is_handshake_confirmed(const QUIC_CHANNEL *ch);
+int ossl_quic_channel_is_server(const QUIC_CHANNEL *ch);
+void ossl_quic_channel_notify_flush_done(QUIC_CHANNEL *ch);
 
 QUIC_PORT *ossl_quic_channel_get0_port(QUIC_CHANNEL *ch);
 QUIC_ENGINE *ossl_quic_channel_get0_engine(QUIC_CHANNEL *ch);
@@ -465,9 +469,10 @@ uint64_t ossl_quic_channel_get_max_idle_timeout_peer_request(const QUIC_CHANNEL 
 uint64_t ossl_quic_channel_get_max_idle_timeout_actual(const QUIC_CHANNEL *ch);
 
 int ossl_quic_bind_channel(QUIC_CHANNEL *ch, const BIO_ADDR *peer,
-    const QUIC_CONN_ID *scid, const QUIC_CONN_ID *dcid,
-    const QUIC_CONN_ID *odcid);
+    const QUIC_CONN_ID *dcid, const QUIC_CONN_ID *odcid);
 
+void ossl_quic_channel_set_tcause(QUIC_CHANNEL *ch, uint64_t app_error_code,
+    const char *app_reason);
 #endif
 
 #endif

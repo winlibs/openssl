@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -36,10 +36,6 @@ static int test_trace_categories(void)
             SET_EXPECTED_CAT_NAME(TLS_CIPHER);
         case OSSL_TRACE_CATEGORY_CONF:
             SET_EXPECTED_CAT_NAME(CONF);
-        case OSSL_TRACE_CATEGORY_ENGINE_TABLE:
-            SET_EXPECTED_CAT_NAME(ENGINE_TABLE);
-        case OSSL_TRACE_CATEGORY_ENGINE_REF_COUNT:
-            SET_EXPECTED_CAT_NAME(ENGINE_REF_COUNT);
         case OSSL_TRACE_CATEGORY_PKCS5V2:
             SET_EXPECTED_CAT_NAME(PKCS5V2);
         case OSSL_TRACE_CATEGORY_PKCS12_KEYGEN:
@@ -105,12 +101,12 @@ static int put_trace_output(void)
 
     OSSL_TRACE_BEGIN(HTTP)
     {
-        res = TEST_int_eq(BIO_printf(trc_out, OSSL_HELLO), strlen(OSSL_HELLO));
-        res += TEST_int_eq(trace_string(0, 0, OSSL_STR80), strlen(OSSL_STR80));
-        res += TEST_int_eq(trace_string(0, 0, OSSL_STR81), strlen(OSSL_STR80));
-        res += TEST_int_eq(trace_string(1, 1, OSSL_CTRL), strlen(OSSL_CTRL));
-        res += TEST_int_eq(trace_string(0, 1, OSSL_MASKED), strlen(OSSL_MASKED) + 1); /* newline added */
-        res += TEST_int_eq(BIO_printf(trc_out, OSSL_BYE), strlen(OSSL_BYE));
+        res = TEST_int_eq(BIO_printf(trc_out, OSSL_HELLO), (int)strlen(OSSL_HELLO));
+        res += TEST_int_eq(trace_string(0, 0, OSSL_STR80), (int)strlen(OSSL_STR80));
+        res += TEST_int_eq(trace_string(0, 0, OSSL_STR81), (int)strlen(OSSL_STR80));
+        res += TEST_int_eq(trace_string(1, 1, OSSL_CTRL), (int)strlen(OSSL_CTRL));
+        res += TEST_int_eq(trace_string(0, 1, OSSL_MASKED), (int)strlen(OSSL_MASKED) + 1); /* newline added */
+        res += TEST_int_eq(BIO_printf(trc_out, OSSL_BYE), (int)strlen(OSSL_BYE));
         res = res == 6;
         /* not using '&&' but '+' to catch potentially multiple test failures */
     }
@@ -151,7 +147,7 @@ static int test_trace_channel(void)
 
     ret = put_trace_output();
     len = BIO_get_mem_data(bio, &p_buf);
-    if (!TEST_strn2_eq(p_buf, len, expected, expected_len))
+    if (!TEST_size_t_eq(len, expected_len) || !TEST_strn_eq(p_buf, expected, len))
         ret = 0;
     ret = TEST_int_eq(OSSL_trace_set_channel(OSSL_TRACE_CATEGORY_HTTP, NULL), 1)
         && ret;

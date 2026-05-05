@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -210,7 +210,9 @@ void ossl_rand_pool_keep_random_devices_open(int keep)
 #define OPENSSL_RAND_SEED_DEVRANDOM
 #endif
 
-#if (defined(__FreeBSD__) || defined(__NetBSD__)) && defined(KERN_ARND)
+#if ((defined(__FreeBSD__) && __FreeBSD_version < 1200061)     \
+    || (defined(__NetBSD__) && __NetBSD_Version < 1000000000)) \
+    && defined(KERN_ARND)
 /*
  * sysctl_random(): Use sysctl() to read a random number from the kernel
  * Returns the number of bytes returned in buf on success, -1 on failure.
@@ -420,11 +422,6 @@ static int keep_random_devices_open = 1;
     && defined(OPENSSL_RAND_SEED_GETRANDOM)
 static void *shm_addr;
 
-static void cleanup_shm(void)
-{
-    shmdt(shm_addr);
-}
-
 /*
  * Ensure that the system randomness source has been adequately seeded.
  * This is done by having the first start of libcrypto, wait until the device
@@ -491,8 +488,8 @@ static int wait_random_seeded(void)
              * If this call fails, it isn't a big problem.
              */
             shm_addr = shmat(shm_id, NULL, SHM_RDONLY);
-            if (shm_addr != (void *)-1)
-                OPENSSL_atexit(&cleanup_shm);
+            if (shm_addr == (void *)-1)
+                shm_addr = NULL;
         }
     }
     return seeded;
@@ -581,6 +578,14 @@ void ossl_rand_pool_cleanup(void)
 
     for (i = 0; i < OSSL_NELEM(random_devices); i++)
         close_random_device(i);
+
+#if defined(__linux) && defined(DEVRANDOM_WAIT) \
+    && defined(OPENSSL_RAND_SEED_GETRANDOM)
+    if (shm_addr != NULL) {
+        shmdt(shm_addr);
+        shm_addr = NULL;
+    }
+#endif
 }
 
 void ossl_rand_pool_keep_random_devices_open(int keep)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -25,8 +25,7 @@ void *ossl_tdes_newctx(void *provctx, int mode, size_t kbits, size_t blkbits,
 {
     PROV_TDES_CTX *tctx;
 
-    if (!ossl_prov_is_running())
-        return NULL;
+    CIPHER_PROV_CHECK(provctx, DES_EDE3_ECB);
 
     tctx = OPENSSL_zalloc(sizeof(*tctx));
     if (tctx != NULL) {
@@ -168,12 +167,10 @@ int ossl_tdes_get_ctx_params(void *vctx, OSSL_PARAM params[])
 }
 
 CIPHER_DEFAULT_SETTABLE_CTX_PARAMS_START(ossl_tdes)
-OSSL_PARAM_uint(OSSL_CIPHER_PARAM_PADDING, NULL),
-    OSSL_PARAM_uint(OSSL_CIPHER_PARAM_NUM, NULL),
-    OSSL_FIPS_IND_SETTABLE_CTX_PARAM(OSSL_CIPHER_PARAM_FIPS_ENCRYPT_CHECK)
-        CIPHER_DEFAULT_SETTABLE_CTX_PARAMS_END(ossl_tdes)
+OSSL_FIPS_IND_SETTABLE_CTX_PARAM(OSSL_CIPHER_PARAM_FIPS_ENCRYPT_CHECK)
+CIPHER_DEFAULT_SETTABLE_CTX_PARAMS_END(ossl_tdes)
 
-            int ossl_tdes_set_ctx_params(void *vctx, const OSSL_PARAM params[])
+int ossl_tdes_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     if (!OSSL_FIPS_IND_SET_CTX_PARAM((PROV_TDES_CTX *)vctx,
             OSSL_FIPS_IND_SETTABLE0, params,

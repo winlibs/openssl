@@ -1,5 +1,5 @@
 /*-
- * Copyright 2022-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -148,7 +148,7 @@ static int extract_keypair(const EVP_PKEY *pkey,
     ret = 1;
 end:
     if (ret != 1) {
-        OSSL_PARAM_free(keypair);
+        OSSL_PARAM_clear_free(keypair);
         keypair = NULL;
     }
     *p_keypair = keypair;
@@ -216,7 +216,7 @@ end:
     EVP_PKEY_CTX_free(pkey_ctx);
 
     fprintf(stdout, "Generating signature:\n");
-    BIO_dump_indent_fp(stdout, sig_value, sig_len, 2);
+    BIO_dump_indent_fp(stdout, sig_value, (int)sig_len, 2);
     fprintf(stdout, "\n");
     return ret;
 }
@@ -306,7 +306,7 @@ end:
     EVP_PKEY_free(params);
     EVP_PKEY_free(pkey);
     OSSL_PARAM_free(public_key);
-    OSSL_PARAM_free(keypair);
+    OSSL_PARAM_clear_free(keypair);
     OSSL_LIB_CTX_free(libctx);
 
     return ret;

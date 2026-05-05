@@ -31,6 +31,7 @@
 #include <crypto/cryptlib.h>
 #include "internal/common.h"
 #include "internal/thread_arch.h"
+#include "internal/threads_common.h"
 #include "internal/rcu.h"
 #include "rcu_internal.h"
 
@@ -126,7 +127,7 @@ struct rcu_lock_st {
 static struct rcu_qp *allocate_new_qp_group(struct rcu_lock_st *lock,
     uint32_t count)
 {
-    struct rcu_qp *new = OPENSSL_zalloc(sizeof(*new) * count);
+    struct rcu_qp *new = OPENSSL_calloc(count, sizeof(*new));
 
     lock->group_count = count;
     return new;
@@ -219,30 +220,37 @@ static ossl_inline struct rcu_qp *get_hold_current_qp(CRYPTO_RCU_LOCK *lock)
 static void ossl_rcu_free_local_data(void *arg)
 {
     OSSL_LIB_CTX *ctx = arg;
-    CRYPTO_THREAD_LOCAL *lkey = ossl_lib_ctx_get_rcukey(ctx);
-    struct rcu_thr_data *data = CRYPTO_THREAD_get_local(lkey);
+    struct rcu_thr_data *data = CRYPTO_THREAD_get_local_ex(CRYPTO_THREAD_LOCAL_RCU_KEY, ctx);
+
+    CRYPTO_THREAD_set_local_ex(CRYPTO_THREAD_LOCAL_RCU_KEY, ctx, NULL);
     OPENSSL_free(data);
-    CRYPTO_THREAD_set_local(lkey, NULL);
 }
 
-void ossl_rcu_read_lock(CRYPTO_RCU_LOCK *lock)
+int ossl_rcu_read_lock(CRYPTO_RCU_LOCK *lock)
 {
     struct rcu_thr_data *data;
     int i;
     int available_qp = -1;
-    CRYPTO_THREAD_LOCAL *lkey = ossl_lib_ctx_get_rcukey(lock->ctx);
 
     /*
      * we're going to access current_qp here so ask the
      * processor to fetch it
      */
-    data = CRYPTO_THREAD_get_local(lkey);
+    data = CRYPTO_THREAD_get_local_ex(CRYPTO_THREAD_LOCAL_RCU_KEY, lock->ctx);
 
     if (data == NULL) {
         data = OPENSSL_zalloc(sizeof(*data));
-        OPENSSL_assert(data != NULL);
-        CRYPTO_THREAD_set_local(lkey, data);
-        ossl_init_thread_start(NULL, lock->ctx, ossl_rcu_free_local_data);
+        if (data == NULL)
+            return 0;
+        if (!CRYPTO_THREAD_set_local_ex(CRYPTO_THREAD_LOCAL_RCU_KEY, lock->ctx, data)) {
+            OPENSSL_free(data);
+            return 0;
+        }
+        if (!ossl_init_thread_start(NULL, lock->ctx, ossl_rcu_free_local_data)) {
+            OPENSSL_free(data);
+            CRYPTO_THREAD_set_local_ex(CRYPTO_THREAD_LOCAL_RCU_KEY, lock->ctx, NULL);
+            return 0;
+        }
     }
 
     for (i = 0; i < MAX_QPS; i++) {
@@ -250,7 +258,7 @@ void ossl_rcu_read_lock(CRYPTO_RCU_LOCK *lock)
             available_qp = i;
         /* If we have a hold on this lock already, we're good */
         if (data->thread_qps[i].lock == lock)
-            return;
+            return 1;
     }
 
     /*
@@ -261,6 +269,7 @@ void ossl_rcu_read_lock(CRYPTO_RCU_LOCK *lock)
     data->thread_qps[available_qp].qp = get_hold_current_qp(lock);
     data->thread_qps[available_qp].depth = 1;
     data->thread_qps[available_qp].lock = lock;
+    return 1;
 }
 
 void ossl_rcu_write_lock(CRYPTO_RCU_LOCK *lock)
@@ -275,8 +284,7 @@ void ossl_rcu_write_unlock(CRYPTO_RCU_LOCK *lock)
 
 void ossl_rcu_read_unlock(CRYPTO_RCU_LOCK *lock)
 {
-    CRYPTO_THREAD_LOCAL *lkey = ossl_lib_ctx_get_rcukey(lock->ctx);
-    struct rcu_thr_data *data = CRYPTO_THREAD_get_local(lkey);
+    struct rcu_thr_data *data = CRYPTO_THREAD_get_local_ex(CRYPTO_THREAD_LOCAL_RCU_KEY, lock->ctx);
     int i;
     LONG64 ret;
 
@@ -339,9 +347,9 @@ static struct rcu_qp *update_qp(CRYPTO_RCU_LOCK *lock, uint32_t *curr_id)
     InterlockedExchange((LONG volatile *)&lock->reader_idx, tmp);
 #endif
 
-    /* wake up any waiters */
-    ossl_crypto_condvar_broadcast(lock->alloc_signal);
     ossl_crypto_mutex_unlock(lock->alloc_lock);
+    /* wake up any waiters */
+    ossl_crypto_condvar_signal(lock->alloc_signal);
     return &lock->qp_group[current_idx];
 }
 
@@ -350,8 +358,8 @@ static void retire_qp(CRYPTO_RCU_LOCK *lock,
 {
     ossl_crypto_mutex_lock(lock->alloc_lock);
     lock->writers_alloced--;
-    ossl_crypto_condvar_broadcast(lock->alloc_signal);
     ossl_crypto_mutex_unlock(lock->alloc_lock);
+    ossl_crypto_condvar_signal(lock->alloc_signal);
 }
 
 void ossl_synchronize_rcu(CRYPTO_RCU_LOCK *lock)
@@ -380,8 +388,8 @@ void ossl_synchronize_rcu(CRYPTO_RCU_LOCK *lock)
     } while (count != (uint64_t)0);
 
     lock->next_to_retire++;
-    ossl_crypto_condvar_broadcast(lock->prior_signal);
     ossl_crypto_mutex_unlock(lock->prior_lock);
+    ossl_crypto_condvar_broadcast(lock->prior_signal);
 
     retire_qp(lock, qp);
 
@@ -542,12 +550,6 @@ int CRYPTO_THREAD_run_once(CRYPTO_ONCE *once, void (*init)(void))
 
 int CRYPTO_THREAD_init_local(CRYPTO_THREAD_LOCAL *key, void (*cleanup)(void *))
 {
-
-#ifndef FIPS_MODULE
-    if (!ossl_init_thread())
-        return 0;
-#endif
-
     *key = TlsAlloc();
     if (*key == TLS_OUT_OF_INDEXES)
         return 0;
@@ -708,7 +710,7 @@ int CRYPTO_atomic_store(uint64_t *dst, uint64_t val, CRYPTO_RWLOCK *lock)
 
     return 1;
 #else
-    InterlockedExchange64(dst, val);
+    InterlockedExchange64((LONG64 volatile *)dst, val);
     return 1;
 #endif
 }
@@ -726,6 +728,22 @@ int CRYPTO_atomic_load_int(int *val, int *ret, CRYPTO_RWLOCK *lock)
 #else
     /* On Windows, LONG (but not long) is always the same size as int. */
     *ret = (int)InterlockedOr((LONG volatile *)val, 0);
+    return 1;
+#endif
+}
+
+int CRYPTO_atomic_store_int(int *dst, int val, CRYPTO_RWLOCK *lock)
+{
+#if (defined(NO_INTERLOCKEDOR64))
+    if (lock == NULL || !CRYPTO_THREAD_read_lock(lock))
+        return 0;
+    *dst = val;
+    if (!CRYPTO_THREAD_unlock(lock))
+        return 0;
+
+    return 1;
+#else
+    InterlockedExchange((LONG volatile *)dst, val);
     return 1;
 #endif
 }

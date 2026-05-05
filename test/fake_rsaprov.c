@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -349,7 +349,7 @@ static int fake_rsa_sig_sign(void *ctx, unsigned char *sig,
     *siglen = 256;
     /* record that the real sign operation was called */
     if (sig != NULL) {
-        if (!TEST_int_ge(sigsize, *siglen))
+        if (!TEST_size_t_ge(sigsize, *siglen))
             return 0;
         *sigctx = 2;
         /* produce a fake signature */
@@ -462,7 +462,7 @@ static int fake_rsa_dgstsgnvfy_final(void *ctx, unsigned char *sig,
         *siglen = 256;
         /* record that the real sign operation was called */
         if (sig != NULL) {
-            if (!TEST_int_ge(sigsize, *siglen))
+            if (!TEST_size_t_ge(sigsize, *siglen))
                 return 0;
             /* produce a fake signature */
             memset(sig, 'a', *siglen);

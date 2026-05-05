@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -33,8 +33,8 @@ OSSL_provider_init_fn ossl_legacy_provider_init;
 /* Extended test macros to allow passing file & line number */
 #define TEST_FL_ptr(a) test_ptr(file, line, #a, a)
 #define TEST_FL_mem_eq(a, m, b, n) test_mem_eq(file, line, #a, #b, a, m, b, n)
-#define TEST_FL_strn_eq(a, b, n) test_strn_eq(file, line, #a, #b, a, n, b, n)
-#define TEST_FL_strn2_eq(a, m, b, n) test_strn_eq(file, line, #a, #b, a, m, b, n)
+#define TEST_FL_strn_eq(a, b, n) test_strn_eq(file, line, #a, #b, a, b, n)
+#define TEST_FL_size_t_eq(a, b) test_size_t_eq(file, line, #a, #b, a, b)
 #define TEST_FL_int_eq(a, b) test_int_eq(file, line, #a, #b, a, b)
 #define TEST_FL_int_ge(a, b) test_int_ge(file, line, #a, #b, a, b)
 #define TEST_FL_int_gt(a, b) test_int_gt(file, line, #a, #b, a, b)
@@ -267,7 +267,7 @@ static int encode_EVP_PKEY_prov(const char *file, const int line,
         || !TEST_FL_true(OSSL_ENCODER_to_bio(ectx, mem_ser))
         || !TEST_FL_true(BIO_get_mem_ptr(mem_ser, &mem_buf) > 0)
         || !TEST_FL_ptr(*encoded = mem_buf->data)
-        || !TEST_FL_long_gt(*encoded_len = mem_buf->length, 0))
+        || !TEST_FL_long_gt(*encoded_len = (long)mem_buf->length, 0))
         goto end;
 
     /* Detach the encoded output */
@@ -277,6 +277,34 @@ static int encode_EVP_PKEY_prov(const char *file, const int line,
 end:
     BIO_free(mem_ser);
     OSSL_ENCODER_CTX_free(ectx);
+    return ok;
+}
+
+static int encode_EVP_PKEY_i2d(const char *unused_file,
+    const int unused_line,
+    void **encoded, long *encoded_len,
+    void *object, int unused_selection,
+    const char *unused_output_type,
+    const char *unused_output_structure,
+    const char *unused_pass,
+    const char *unused_pcipher)
+{
+    EVP_PKEY *pkey = object;
+    unsigned char *buf = NULL, *p;
+    int len, ok = 0;
+
+    if (!TEST_int_gt((len = i2d_PKCS8PrivateKey(pkey, NULL)), 0)
+        || !TEST_ptr(p = buf = OPENSSL_malloc(len))
+        || !TEST_int_eq(i2d_PKCS8PrivateKey(pkey, &p), len)
+        || !TEST_int_eq((int)(p - buf), len))
+        goto end;
+
+    *encoded = buf;
+    *encoded_len = len;
+    buf = NULL;
+    ok = 1;
+end:
+    OPENSSL_free(buf);
     return ok;
 }
 
@@ -378,11 +406,11 @@ static int encode_EVP_PKEY_legacy_PEM(const char *file, const int line,
     if (!TEST_FL_ptr(mem_ser = BIO_new(BIO_s_mem()))
         || !TEST_FL_true(PEM_write_bio_PrivateKey_traditional(mem_ser, pkey,
             cipher,
-            upass, passlen,
+            upass, (int)passlen,
             NULL, NULL))
         || !TEST_FL_true(BIO_get_mem_ptr(mem_ser, &mem_buf) > 0)
         || !TEST_FL_ptr(*encoded = mem_buf->data)
-        || !TEST_FL_long_gt(*encoded_len = mem_buf->length, 0))
+        || !TEST_FL_long_gt(*encoded_len = (long)mem_buf->length, 0))
         goto end;
 
     /* Detach the encoded output */
@@ -421,7 +449,7 @@ static int encode_EVP_PKEY_MSBLOB(const char *file, const int line,
 
     if (!TEST_FL_true(BIO_get_mem_ptr(mem_ser, &mem_buf) > 0)
         || !TEST_FL_ptr(*encoded = mem_buf->data)
-        || !TEST_FL_long_gt(*encoded_len = mem_buf->length, 0))
+        || !TEST_FL_long_gt(*encoded_len = (long)mem_buf->length, 0))
         goto end;
 
     /* Detach the encoded output */
@@ -437,7 +465,7 @@ static pem_password_cb pass_pw;
 static int pass_pw(char *buf, int size, int rwflag, void *userdata)
 {
     OPENSSL_strlcpy(buf, userdata, size);
-    return strlen(userdata);
+    return (int)strlen(userdata);
 }
 
 static int encode_EVP_PKEY_PVK(const char *file, const int line,
@@ -463,7 +491,7 @@ static int encode_EVP_PKEY_PVK(const char *file, const int line,
             0)
         || !TEST_FL_true(BIO_get_mem_ptr(mem_ser, &mem_buf) > 0)
         || !TEST_FL_ptr(*encoded = mem_buf->data)
-        || !TEST_FL_long_gt(*encoded_len = mem_buf->length, 0))
+        || !TEST_FL_long_gt(*encoded_len = (long)mem_buf->length, 0))
         goto end;
 
     /* Detach the encoded output */
@@ -479,7 +507,8 @@ static int test_text(const char *file, const int line,
     const void *data1, size_t data1_len,
     const void *data2, size_t data2_len)
 {
-    return TEST_FL_strn2_eq(data1, data1_len, data2, data2_len);
+    return TEST_FL_size_t_eq(data1_len, data2_len)
+        && TEST_FL_strn_eq(data1, data2, data1_len);
 }
 
 static int test_mem(const char *file, const int line,
@@ -529,7 +558,7 @@ static int check_unprotected_PKCS8_DER(const char *file, const int line,
     const void *data, size_t data_len)
 {
     const unsigned char *datap = data;
-    PKCS8_PRIV_KEY_INFO *p8inf = d2i_PKCS8_PRIV_KEY_INFO(NULL, &datap, data_len);
+    PKCS8_PRIV_KEY_INFO *p8inf = d2i_PKCS8_PRIV_KEY_INFO(NULL, &datap, (long)data_len);
     int ok = 0;
 
     if (TEST_FL_ptr(p8inf)) {
@@ -558,6 +587,17 @@ static int test_unprotected_via_DER(const char *type, EVP_PKEY *key, int fips)
             | OSSL_KEYMGMT_SELECT_ALL_PARAMETERS,
         "DER", "PrivateKeyInfo", NULL, NULL,
         encode_EVP_PKEY_prov, decode_EVP_PKEY_prov,
+        test_mem, check_unprotected_PKCS8_DER,
+        dump_der, fips ? 0 : FLAG_FAIL_IF_FIPS);
+}
+
+static int test_unprotected_via_i2d(const char *type, EVP_PKEY *key, int fips)
+{
+    return test_encode_decode(__FILE__, __LINE__, type, key,
+        OSSL_KEYMGMT_SELECT_KEYPAIR
+            | OSSL_KEYMGMT_SELECT_ALL_PARAMETERS,
+        "DER", "PrivateKeyInfo", NULL, NULL,
+        encode_EVP_PKEY_i2d, decode_EVP_PKEY_prov,
         test_mem, check_unprotected_PKCS8_DER,
         dump_der, fips ? 0 : FLAG_FAIL_IF_FIPS);
 }
@@ -602,7 +642,7 @@ static int check_params_DER(const char *file, const int line,
         itype = EVP_PKEY_EC;
 
     if (itype != NID_undef) {
-        pkey = d2i_KeyParams(itype, NULL, &datap, data_len);
+        pkey = d2i_KeyParams(itype, NULL, &datap, (long)data_len);
         ok = (pkey != NULL);
         EVP_PKEY_free(pkey);
     }
@@ -673,7 +713,7 @@ static int check_MSBLOB(const char *file, const int line,
     const char *type, const void *data, size_t data_len)
 {
     const unsigned char *datap = data;
-    EVP_PKEY *pkey = b2i_PrivateKey(&datap, data_len);
+    EVP_PKEY *pkey = b2i_PrivateKey(&datap, (long)data_len);
     int ok = TEST_FL_ptr(pkey);
 
     EVP_PKEY_free(pkey);
@@ -698,7 +738,8 @@ static int check_PVK(const char *file, const int line,
     unsigned int saltlen = 0, keylen = 0;
     int isdss = -1;
 
-    return ossl_do_PVK_header(&in, data_len, 0, &isdss, &saltlen, &keylen);
+    return ossl_do_PVK_header(&in, (unsigned int)data_len, 0, &isdss, &saltlen,
+        &keylen);
 }
 
 static int test_unprotected_via_PVK(const char *type, EVP_PKEY *key)
@@ -720,7 +761,7 @@ static int check_protected_PKCS8_DER(const char *file, const int line,
     const void *data, size_t data_len)
 {
     const unsigned char *datap = data;
-    X509_SIG *p8 = d2i_X509_SIG(NULL, &datap, data_len);
+    X509_SIG *p8 = d2i_X509_SIG(NULL, &datap, (long)data_len);
     int ok = TEST_FL_ptr(p8);
 
     X509_SIG_free(p8);
@@ -789,7 +830,7 @@ static int test_protected_via_legacy_PEM(const char *type, EVP_PKEY *key)
         dump_pem, 0);
 }
 
-#ifndef OPENSSL_NO_RC4
+#if !defined(OPENSSL_NO_RC4) && !defined(OPENSSL_NO_PVKKDF)
 static int test_protected_via_PVK(const char *type, EVP_PKEY *key)
 {
     int ret = 0;
@@ -812,7 +853,8 @@ static int check_public_DER(const char *file, const int line,
     const char *type, const void *data, size_t data_len)
 {
     const unsigned char *datap = data;
-    EVP_PKEY *pkey = d2i_PUBKEY_ex(NULL, &datap, data_len, testctx, testpropq);
+    EVP_PKEY *pkey = d2i_PUBKEY_ex(NULL, &datap, (long)data_len, testctx,
+        testpropq);
     int ok = (TEST_FL_ptr(pkey) && TEST_FL_true(EVP_PKEY_is_a(pkey, type)));
 
     EVP_PKEY_free(pkey);
@@ -855,7 +897,7 @@ static int check_public_MSBLOB(const char *file, const int line,
     const void *data, size_t data_len)
 {
     const unsigned char *datap = data;
-    EVP_PKEY *pkey = b2i_PublicKey(&datap, data_len);
+    EVP_PKEY *pkey = b2i_PublicKey(&datap, (long)data_len);
     int ok = TEST_FL_ptr(pkey);
 
     EVP_PKEY_free(pkey);
@@ -894,6 +936,10 @@ static int test_public_via_MSBLOB(const char *type, EVP_PKEY *key)
     {                                                                     \
         return test_unprotected_via_DER(KEYTYPEstr, key_##KEYTYPE, fips); \
     }                                                                     \
+    static int test_unprotected_##KEYTYPE##_via_i2d(void)                 \
+    {                                                                     \
+        return test_unprotected_via_i2d(KEYTYPEstr, key_##KEYTYPE, fips); \
+    }                                                                     \
     static int test_unprotected_##KEYTYPE##_via_PEM(void)                 \
     {                                                                     \
         return test_unprotected_via_PEM(KEYTYPEstr, key_##KEYTYPE, fips); \
@@ -917,6 +963,7 @@ static int test_public_via_MSBLOB(const char *type, EVP_PKEY *key)
 
 #define ADD_TEST_SUITE(KEYTYPE)                     \
     ADD_TEST(test_unprotected_##KEYTYPE##_via_DER); \
+    ADD_TEST(test_unprotected_##KEYTYPE##_via_i2d); \
     ADD_TEST(test_unprotected_##KEYTYPE##_via_PEM); \
     ADD_TEST(test_protected_##KEYTYPE##_via_DER);   \
     ADD_TEST(test_protected_##KEYTYPE##_via_PEM);   \
@@ -972,7 +1019,7 @@ static int test_public_via_MSBLOB(const char *type, EVP_PKEY *key)
     }
 #define ADD_TEST_SUITE_UNPROTECTED_PVK(KEYTYPE) \
     ADD_TEST(test_unprotected_##KEYTYPE##_via_PVK)
-#ifndef OPENSSL_NO_RC4
+#if !defined(OPENSSL_NO_RC4) && !defined(OPENSSL_NO_PVKKDF)
 #define IMPLEMENT_TEST_SUITE_PROTECTED_PVK(KEYTYPE, KEYTYPEstr)   \
     static int test_protected_##KEYTYPE##_via_PVK(void)           \
     {                                                             \
@@ -1001,7 +1048,7 @@ IMPLEMENT_TEST_SUITE_PARAMS(DSA, "DSA")
 IMPLEMENT_TEST_SUITE_LEGACY(DSA, "DSA")
 IMPLEMENT_TEST_SUITE_MSBLOB(DSA, "DSA")
 IMPLEMENT_TEST_SUITE_UNPROTECTED_PVK(DSA, "DSA")
-#ifndef OPENSSL_NO_RC4
+#if !defined(OPENSSL_NO_RC4) && !defined(OPENSSL_NO_PVKKDF)
 IMPLEMENT_TEST_SUITE_PROTECTED_PVK(DSA, "DSA")
 #endif
 #endif
@@ -1092,7 +1139,7 @@ IMPLEMENT_TEST_SUITE(RSA_PSS, "RSA-PSS", 1)
  */
 IMPLEMENT_TEST_SUITE_MSBLOB(RSA, "RSA")
 IMPLEMENT_TEST_SUITE_UNPROTECTED_PVK(RSA, "RSA")
-#ifndef OPENSSL_NO_RC4
+#if !defined(OPENSSL_NO_RC4) && !defined(OPENSSL_NO_PVKKDF)
 IMPLEMENT_TEST_SUITE_PROTECTED_PVK(RSA, "RSA")
 #endif
 
@@ -1555,7 +1602,7 @@ int setup_tests(void)
         ADD_TEST_SUITE_LEGACY(DSA);
         ADD_TEST_SUITE_MSBLOB(DSA);
         ADD_TEST_SUITE_UNPROTECTED_PVK(DSA);
-#ifndef OPENSSL_NO_RC4
+#if !defined(OPENSSL_NO_RC4) && !defined(OPENSSL_NO_PVKKDF)
         ADD_TEST_SUITE_PROTECTED_PVK(DSA);
 #endif
 #endif
@@ -1607,7 +1654,7 @@ int setup_tests(void)
          */
         ADD_TEST_SUITE_MSBLOB(RSA);
         ADD_TEST_SUITE_UNPROTECTED_PVK(RSA);
-#ifndef OPENSSL_NO_RC4
+#if !defined(OPENSSL_NO_RC4) && !defined(OPENSSL_NO_PVKKDF)
         ADD_TEST_SUITE_PROTECTED_PVK(RSA);
 #endif
 

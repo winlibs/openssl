@@ -1,5 +1,5 @@
 /*
- *  Copyright 2024-2025 The OpenSSL Project Authors. All Rights Reserved.
+ *  Copyright 2024-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  *  Licensed under the Apache License 2.0 (the "License").  You may not use
  *  this file except in compliance with the License.  You can obtain a copy
@@ -565,21 +565,21 @@ static size_t build_request_set(SSL *ssl)
         /*
          * Expand our poll_list, outbiolist, and outnames arrays
          */
-        poll_list = OPENSSL_realloc(poll_list,
-            sizeof(SSL_POLL_ITEM) * poll_count);
+        poll_list = OPENSSL_realloc_array(poll_list,
+            poll_count, sizeof(SSL_POLL_ITEM));
         if (poll_list == NULL) {
             fprintf(stderr, "Unable to realloc poll_list\n");
             goto err;
         }
 
-        outbiolist = OPENSSL_realloc(outbiolist,
-            sizeof(BIO *) * poll_count);
+        outbiolist = OPENSSL_realloc_array(outbiolist,
+            poll_count, sizeof(BIO *));
         if (outbiolist == NULL) {
             fprintf(stderr, "Unable to realloc outbiolist\n");
             goto err;
         }
 
-        outnames = OPENSSL_realloc(outnames, sizeof(char *) * poll_count);
+        outnames = OPENSSL_realloc_array(outnames, poll_count, sizeof(char *));
         if (outnames == NULL) {
             fprintf(stderr, "Unable to realloc outnames\n");
             goto err;
@@ -783,7 +783,7 @@ static int setup_connection(char *hostname, char *port,
      * Virtually all clients should do this unless you really know what you
      * are doing.
      */
-    if (!SSL_set1_host(*ssl, hostname)) {
+    if (!SSL_set1_dnsname(*ssl, hostname)) {
         fprintf(stderr, "Failed to set the certificate verification hostname");
         goto end;
     }
@@ -881,6 +881,11 @@ int main(int argc, char *argv[])
         goto end;
     }
 
+    if (reqnames == NULL) {
+        fprintf(stderr, "Failed to allocate memory for request names\n");
+        goto end;
+    }
+
     hostname = argv[argnext++];
     port = argv[argnext++];
     reqfile = argv[argnext];
@@ -915,7 +920,8 @@ int main(int argc, char *argv[])
 
     while (req != NULL) {
         total_requests++;
-        req_array = OPENSSL_realloc(req_array, sizeof(char *) * total_requests);
+        req_array = OPENSSL_realloc_array(req_array,
+            total_requests, sizeof(char *));
         if (req_array == NULL)
             goto end;
         req_array[total_requests - 1] = req;

@@ -26,6 +26,8 @@
 #include "internal/nelem.h"
 #include "internal/refcount.h"
 
+#include <crypto/asn1.h>
+
 /* error codes */
 
 /* xorprovider error codes */
@@ -214,7 +216,7 @@ struct tls_group_st {
 static struct tls_group_st xor_group = {
     0, /* group_id, set by randomize_tls_alg_id() */
     128, /* secbits */
-    TLS1_3_VERSION, /* mintls */
+    TLS1_2_VERSION, /* mintls */
     0, /* maxtls */
     -1, /* mindtls */
     -1, /* maxdtls */
@@ -713,10 +715,8 @@ static void xor_freekey(void *keydata)
         return;
     assert(refcnt == 0);
 
-    if (key != NULL) {
-        OPENSSL_free(key->tls_name);
-        key->tls_name = NULL;
-    }
+    OPENSSL_free(key->tls_name);
+    key->tls_name = NULL;
     CRYPTO_FREE_REF(&key->references);
     OPENSSL_free(key);
 }
@@ -1383,7 +1383,8 @@ static X509_SIG *p8info_to_encp8(PKCS8_PRIV_KEY_INFO *p8info,
         return NULL;
     }
     /* First argument == -1 means "standard" */
-    p8 = PKCS8_encrypt_ex(-1, ctx->cipher, kstr, klen, NULL, 0, 0, p8info, libctx, NULL);
+    p8 = PKCS8_encrypt_ex(-1, ctx->cipher, kstr, (int)klen, NULL, 0, 0, p8info,
+        libctx, NULL);
     OPENSSL_cleanse(kstr, klen);
     return p8;
 }
@@ -3226,6 +3227,11 @@ int tls_provider_init(const OSSL_CORE_HANDLE *handle,
         default:
             break;
         }
+    }
+
+    if (c_obj_create == NULL || c_obj_add_sigid == NULL) {
+        ERR_raise(ERR_LIB_USER, XORPROV_R_OBJ_CREATE_ERR);
+        goto err;
     }
 
     /*

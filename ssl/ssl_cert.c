@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -73,7 +73,7 @@ CERT *ssl_cert_new(size_t ssl_pkey_num)
         return NULL;
 
     ret->ssl_pkey_num = ssl_pkey_num;
-    ret->pkeys = OPENSSL_zalloc(ret->ssl_pkey_num * sizeof(CERT_PKEY));
+    ret->pkeys = OPENSSL_calloc(ret->ssl_pkey_num, sizeof(CERT_PKEY));
     if (ret->pkeys == NULL) {
         OPENSSL_free(ret);
         return NULL;
@@ -104,7 +104,7 @@ CERT *ssl_cert_dup(CERT *cert)
         return NULL;
 
     ret->ssl_pkey_num = cert->ssl_pkey_num;
-    ret->pkeys = OPENSSL_zalloc(ret->ssl_pkey_num * sizeof(CERT_PKEY));
+    ret->pkeys = OPENSSL_calloc(ret->ssl_pkey_num, sizeof(CERT_PKEY));
     if (ret->pkeys == NULL) {
         OPENSSL_free(ret);
         return NULL;
@@ -169,8 +169,8 @@ CERT *ssl_cert_dup(CERT *cert)
 
     /* Configured sigalgs copied across */
     if (cert->conf_sigalgs) {
-        ret->conf_sigalgs = OPENSSL_malloc(cert->conf_sigalgslen
-            * sizeof(*cert->conf_sigalgs));
+        ret->conf_sigalgs = OPENSSL_malloc_array(cert->conf_sigalgslen,
+            sizeof(*cert->conf_sigalgs));
         if (ret->conf_sigalgs == NULL)
             goto err;
         memcpy(ret->conf_sigalgs, cert->conf_sigalgs,
@@ -180,8 +180,8 @@ CERT *ssl_cert_dup(CERT *cert)
         ret->conf_sigalgs = NULL;
 
     if (cert->client_sigalgs) {
-        ret->client_sigalgs = OPENSSL_malloc(cert->client_sigalgslen
-            * sizeof(*cert->client_sigalgs));
+        ret->client_sigalgs = OPENSSL_malloc_array(cert->client_sigalgslen,
+            sizeof(*cert->client_sigalgs));
         if (ret->client_sigalgs == NULL)
             goto err;
         memcpy(ret->client_sigalgs, cert->client_sigalgs,
@@ -432,6 +432,9 @@ static int ssl_verify_internal(SSL_CONNECTION *s, STACK_OF(X509) *sk, EVP_PKEY *
     X509_STORE_CTX *ctx = NULL;
     X509_VERIFY_PARAM *param;
     SSL_CTX *sctx;
+#ifndef OPENSSL_NO_OCSP
+    SSL *ssl;
+#endif
 
     /* Something must be passed in */
     if ((sk == NULL || sk_X509_num(sk) == 0) && rpk == NULL)
@@ -484,6 +487,26 @@ static int ssl_verify_internal(SSL_CONNECTION *s, STACK_OF(X509) *sk, EVP_PKEY *
     /* Verify via DANE if enabled */
     if (DANETLS_ENABLED(&s->dane))
         X509_STORE_CTX_set0_dane(ctx, &s->dane);
+
+    /*
+     * Set OCSP Responses for verification:
+     * This function is called in the SERVER_CERTIFICATE message, in TLS 1.2
+     * the OCSP responses are sent in the CERT_STATUS message after that.
+     * Therefore the verification code currently only works in TLS 1.3.
+     */
+#ifndef OPENSSL_NO_OCSP
+    ssl = SSL_CONNECTION_GET_SSL(s);
+    /*
+     * TODO(DTLS-1.3): in future DTLS should also be considered
+     */
+    if (!SSL_is_dtls(ssl) && SSL_version(ssl) >= TLS1_3_VERSION) {
+        /* ignore status_request_v2 if TLS version < 1.3 */
+        int status = SSL_get_tlsext_status_type(ssl);
+
+        if (status == TLSEXT_STATUSTYPE_ocsp)
+            X509_STORE_CTX_set_ocsp_resp(ctx, s->ext.ocsp.resp_ex);
+    }
+#endif
 
     /*
      * We need to inherit the verify parameters. These can be determined by
@@ -718,8 +741,8 @@ static int xname_cmp(const X509_NAME *a, const X509_NAME *b)
     /* X509_NAME_cmp() itself casts away constness in this way, so
      * assume it's safe:
      */
-    alen = i2d_X509_NAME((X509_NAME *)a, &abuf);
-    blen = i2d_X509_NAME((X509_NAME *)b, &bbuf);
+    alen = i2d_X509_NAME(a, &abuf);
+    blen = i2d_X509_NAME(b, &bbuf);
 
     if (alen < 0 || blen < 0)
         ret = -2;
@@ -742,7 +765,7 @@ static int xname_sk_cmp(const X509_NAME *const *a, const X509_NAME *const *b)
 static unsigned long xname_hash(const X509_NAME *a)
 {
     /* This returns 0 also if SHA1 is not available */
-    return X509_NAME_hash_ex((X509_NAME *)a, NULL, NULL, NULL);
+    return X509_NAME_hash_ex(a, NULL, NULL, NULL);
 }
 
 STACK_OF(X509_NAME) *SSL_load_client_CA_file_ex(const char *file,
@@ -751,6 +774,7 @@ STACK_OF(X509_NAME) *SSL_load_client_CA_file_ex(const char *file,
 {
     BIO *in = BIO_new(BIO_s_file());
     X509 *x = NULL;
+    const X509_NAME *cxn = NULL;
     X509_NAME *xn = NULL;
     STACK_OF(X509_NAME) *ret = NULL;
     LHASH_OF(X509_NAME) *name_hash = lh_X509_NAME_new(xname_hash, xname_cmp);
@@ -789,10 +813,10 @@ STACK_OF(X509_NAME) *SSL_load_client_CA_file_ex(const char *file,
                 goto err;
             }
         }
-        if ((xn = X509_get_subject_name(x)) == NULL)
+        if ((cxn = X509_get_subject_name(x)) == NULL)
             goto err;
         /* check for duplicates */
-        xn = X509_NAME_dup(xn);
+        xn = X509_NAME_dup(cxn);
         if (xn == NULL)
             goto err;
         if (lh_X509_NAME_retrieve(name_hash, xn) != NULL) {
@@ -833,6 +857,7 @@ static int add_file_cert_subjects_to_stack(STACK_OF(X509_NAME) *stack,
 {
     BIO *in;
     X509 *x = NULL;
+    const X509_NAME *cxn = NULL;
     X509_NAME *xn = NULL;
     int ret = 1;
 
@@ -849,9 +874,9 @@ static int add_file_cert_subjects_to_stack(STACK_OF(X509_NAME) *stack,
     for (;;) {
         if (PEM_read_bio_X509(in, &x, NULL, NULL) == NULL)
             break;
-        if ((xn = X509_get_subject_name(x)) == NULL)
+        if ((cxn = X509_get_subject_name(x)) == NULL)
             goto err;
-        xn = X509_NAME_dup(xn);
+        xn = X509_NAME_dup(cxn);
         if (xn == NULL)
             goto err;
         if (lh_X509_NAME_retrieve(name_hash, xn) != NULL) {
@@ -1000,6 +1025,7 @@ static int add_uris_recursive(STACK_OF(X509_NAME) *stack,
     int ok = 1;
     OSSL_STORE_CTX *ctx = NULL;
     X509 *x = NULL;
+    const X509_NAME *cxn = NULL;
     X509_NAME *xn = NULL;
     OSSL_STORE_INFO *info = NULL;
 
@@ -1023,8 +1049,8 @@ static int add_uris_recursive(STACK_OF(X509_NAME) *stack,
                     depth - 1);
         } else if (infotype == OSSL_STORE_INFO_CERT) {
             if ((x = OSSL_STORE_INFO_get0_CERT(info)) == NULL
-                || (xn = X509_get_subject_name(x)) == NULL
-                || (xn = X509_NAME_dup(xn)) == NULL)
+                || (cxn = X509_get_subject_name(x)) == NULL
+                || (xn = X509_NAME_dup(cxn)) == NULL)
                 goto err;
             if (sk_X509_NAME_find(stack, xn) >= 0) {
                 /* Duplicate. */

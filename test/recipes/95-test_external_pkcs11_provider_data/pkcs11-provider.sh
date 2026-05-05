@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright 2024 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2024-2026 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -11,15 +11,36 @@
 # OpenSSL external testing using the pkcs11-provider
 #
 
+unpatch() {
+    cd "$SRC_ABS_TOP/pkcs11-provider" && git reset --hard "$GITLEVEL"
+}
+
+trap unpatch EXIT
+
+
 PWD="$(pwd)"
 
 SRCTOP="$(cd $SRCTOP; pwd)"
+SRC_ABS_TOP="$PWD/../.."
+DATA_ABS_TOP="$SRC_ABS_TOP/test/recipes/95-test_external_pkcs11_provider_data"
+echo "$DATA_ABS_TOP"
 BLDTOP="$(cd $BLDTOP; pwd)"
 
 if [ "$SRCTOP" != "$BLDTOP" ] ; then
     echo "Out of tree builds not supported with pkcsa11-provider test!"
     exit 1
 fi
+
+GITLEVEL=$(git rev-parse HEAD)
+cd "$SRC_ABS_TOP/pkcs11-provider"
+# "git am" refuses to run without a user configured.
+for FILE in "$DATA_ABS_TOP"/patches/*; do
+    if [ -f "$FILE" ]; then
+	git -c 'user.name=OpenSSL External Tests' -c 'user.email=nonsuch@openssl.org' am $FILE
+    fi
+done
+
+cd $BLDTOP
 
 O_EXE="$BLDTOP/apps"
 O_BINC="$BLDTOP/include"
@@ -44,6 +65,7 @@ echo "   OPENSSL_ROOT_DIR:   $OPENSSL_ROOT_DIR"
 echo "   OpenSSL version:    $OPENSSL_VERSION"
 echo "------------------------------------------------------------------"
 
+PKCS11_PROVIDER_SRCDIR=$OPENSSL_ROOT_DIR/pkcs11-provider/
 PKCS11_PROVIDER_BUILDDIR=$OPENSSL_ROOT_DIR/pkcs11-provider/builddir
 
 echo "------------------------------------------------------------------"
@@ -53,12 +75,17 @@ echo "------------------------------------------------------------------"
 PKG_CONFIG_PATH="$BLDTOP" meson setup $PKCS11_PROVIDER_BUILDDIR $OPENSSL_ROOT_DIR/pkcs11-provider/ || exit 1
 meson compile -C $PKCS11_PROVIDER_BUILDDIR pkcs11 || exit 1
 
+# Remove pkcs11-provider tlsfuzzer submodule tlsfuzzer directory to skip tlsfuzzer tests
+if [ -d "${PKCS11_PROVIDER_SRCDIR}/tlsfuzzer/tlsfuzzer" ]; then
+    rm -rf "${PKCS11_PROVIDER_SRCDIR}/tlsfuzzer/tlsfuzzer"
+fi
+
 echo "------------------------------------------------------------------"
 echo "Running tests"
 echo "------------------------------------------------------------------"
 
-# The OpenSSL app uses ${HARNESS_OSSL_PREFIX} as a prefix for its standard output
-SUPPORT_ML_DSA=0 HARNESS_OSSL_PREFIX= meson test -C $PKCS11_PROVIDER_BUILDDIR --suite=kryoptic
+# For maintenance reasons and simplicity we only run test with kryoptic token
+meson test -C $PKCS11_PROVIDER_BUILDDIR --suite=kryoptic
 
 if [ $? -ne 0 ]; then
     cat $PKCS11_PROVIDER_BUILDDIR/meson-logs/testlog.txt

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,12 +7,18 @@
  * https://www.openssl.org/source/license.html
  */
 
+/*
+ * Because of *asn1_*
+ */
+#define OPENSSL_SUPPRESS_DEPRECATED
+
 #include <string.h>
 
 #include <openssl/e_os2.h>
 #include <openssl/crypto.h>
 
 #include "internal/nelem.h"
+#include "internal/tlsgroups.h"
 #include "ssl_test_ctx.h"
 #include "../testutil.h"
 
@@ -150,7 +156,6 @@ static const test_enum ssl_protocols[] = {
     { "TLSv1.2", TLS1_2_VERSION },
     { "TLSv1.1", TLS1_1_VERSION },
     { "TLSv1", TLS1_VERSION },
-    { "SSLv3", SSL3_VERSION },
     { "DTLSv1", DTLS1_VERSION },
     { "DTLSv1.2", DTLS1_2_VERSION },
 };
@@ -452,7 +457,9 @@ IMPLEMENT_SSL_TEST_BOOL_OPTION(SSL_TEST_CTX, test, enable_server_sctp_label_bug)
 static const test_enum ssl_certstatus[] = {
     { "None", SSL_TEST_CERT_STATUS_NONE },
     { "GoodResponse", SSL_TEST_CERT_STATUS_GOOD_RESPONSE },
-    { "BadResponse", SSL_TEST_CERT_STATUS_BAD_RESPONSE }
+    { "BadResponse", SSL_TEST_CERT_STATUS_BAD_RESPONSE },
+    { "GoodResponseExt", SSL_TEST_CERT_STATUS_GOOD_RESPONSE_EXT },
+    { "BadResponseExt", SSL_TEST_CERT_STATUS_BAD_RESPONSE_EXT }
 };
 
 __owur static int parse_certstatus(SSL_TEST_SERVER_CONF *server_conf,
@@ -514,17 +521,41 @@ const char *ssl_max_fragment_len_name(int MFL_mode)
 __owur static int parse_expected_key_type(int *ptype, const char *value)
 {
     int nid;
-    const EVP_PKEY_ASN1_METHOD *ameth;
 
     if (value == NULL)
         return 0;
-    ameth = EVP_PKEY_asn1_find_str(NULL, value, -1);
-    if (ameth != NULL)
-        EVP_PKEY_asn1_get0_info(&nid, NULL, NULL, NULL, NULL, ameth);
-    else
-        nid = OBJ_sn2nid(value);
-    if (nid == NID_undef)
+
+    /*
+     * These functions map the values differently than
+     * EVP_PKEY_asn1_find_str (which was used before) so use this hack
+     * to make it work
+     */
+    if (strcmp("RSA", value) == 0) {
+        nid = OBJ_ln2nid("rsaEncryption");
+    } else if (strcmp("RSA-PSS", value) == 0) {
+        nid = OBJ_ln2nid("rsassaPss");
+    } else if (strcmp("Ed448", value) == 0) {
+        nid = OBJ_sn2nid("ED448");
+    } else if (strcmp("Ed25519", value) == 0) {
+        nid = OBJ_sn2nid("ED25519");
+    } else if (strcmp("EC", value) == 0) {
+        nid = OBJ_sn2nid("id-ecPublicKey");
+    } else if (strcmp("curveSM2", value) == 0) {
+        nid = TLSEXT_nid_unknown | OSSL_TLS_GROUP_ID_curveSM2;
+    } else if (strcmp("X25519MLKEM768", value) == 0) {
+        nid = TLSEXT_nid_unknown | OSSL_TLS_GROUP_ID_X25519MLKEM768;
+    } else if (strcmp("SecP256r1MLKEM768", value) == 0) {
+        nid = TLSEXT_nid_unknown | OSSL_TLS_GROUP_ID_SecP256r1MLKEM768;
+    } else if (strcmp("SecP384r1MLKEM1024", value) == 0) {
+        nid = TLSEXT_nid_unknown | OSSL_TLS_GROUP_ID_SecP384r1MLKEM1024;
+    } else if (strcmp("curveSM2MLKEM768", value) == 0) {
+        nid = TLSEXT_nid_unknown | OSSL_TLS_GROUP_ID_curveSM2MLKEM768;
+    } else {
         nid = OBJ_ln2nid(value);
+    }
+
+    if (nid == NID_undef)
+        nid = OBJ_sn2nid(value);
 #ifndef OPENSSL_NO_EC
     if (nid == NID_undef)
         nid = EC_curve_nist2nid(value);

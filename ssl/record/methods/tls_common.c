@@ -403,7 +403,7 @@ int tls_default_read_n(OSSL_RECORD_LAYER *rl, size_t n, size_t max, int extend,
 
         clear_sys_error();
         if (bio != NULL) {
-            ret = BIO_read(bio, pkt + len + left, max - left);
+            ret = BIO_read(bio, pkt + len + left, (int)(max - left));
             if (ret > 0) {
                 bioread = ret;
                 ret = OSSL_RECORD_RETURN_SUCCESS;
@@ -506,7 +506,7 @@ static int rlayer_early_data_count_ok(OSSL_RECORD_LAYER *rl, size_t length,
     }
 
     /* If we are dealing with ciphertext we need to allow for the overhead */
-    max_early_data += overhead;
+    max_early_data += (uint32_t)overhead;
 
     if (rl->early_data_count + length > max_early_data) {
         RLAYERfatal(rl, send ? SSL_AD_INTERNAL_ERROR : SSL_AD_UNEXPECTED_MESSAGE,
@@ -553,7 +553,7 @@ int tls_get_more_records(OSSL_RECORD_LAYER *rl)
     size_t mac_size = 0;
     int imac_size;
     size_t num_recs = 0, max_recs, j;
-    PACKET pkt, sslv2pkt;
+    PACKET pkt;
     SSL_MAC_BUF *macbufs = NULL;
     int ret = OSSL_RECORD_RETURN_FATAL;
 
@@ -576,7 +576,6 @@ int tls_get_more_records(OSSL_RECORD_LAYER *rl)
 
         /* check if we have the header */
         if ((rl->rstate != SSL_ST_READ_BODY) || (rl->packet_length < SSL3_RT_HEADER_LENGTH)) {
-            size_t sslv2len;
             unsigned int type;
 
             rret = rl->funcs->read_n(rl, SSL3_RT_HEADER_LENGTH,
@@ -593,84 +592,31 @@ int tls_get_more_records(OSSL_RECORD_LAYER *rl)
                 RLAYERfatal(rl, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
                 return OSSL_RECORD_RETURN_FATAL;
             }
-            sslv2pkt = pkt;
-            if (!PACKET_get_net_2_len(&sslv2pkt, &sslv2len)
-                || !PACKET_get_1(&sslv2pkt, &type)) {
+
+            /* Pull apart the header into the TLS_RL_RECORD */
+            if (!PACKET_get_1(&pkt, &type)
+                || !PACKET_get_net_2(&pkt, &version)
+                || !PACKET_get_net_2_len(&pkt, &thisrr->length)) {
+                if (rl->msg_callback != NULL)
+                    rl->msg_callback(0, 0, SSL3_RT_HEADER, p, 5, rl->cbarg);
                 RLAYERfatal(rl, SSL_AD_DECODE_ERROR, ERR_R_INTERNAL_ERROR);
                 return OSSL_RECORD_RETURN_FATAL;
             }
-            /*
-             * The first record received by the server may be a V2ClientHello.
-             */
-            if (rl->role == OSSL_RECORD_ROLE_SERVER
-                && rl->is_first_record
-                && (sslv2len & 0x8000) != 0
-                && (type == SSL2_MT_CLIENT_HELLO)) {
-                /*
-                 *  SSLv2 style record
-                 *
-                 * |num_recs| here will actually always be 0 because
-                 * |num_recs > 0| only ever occurs when we are processing
-                 * multiple app data records - which we know isn't the case here
-                 * because it is an SSLv2ClientHello. We keep it using
-                 * |num_recs| for the sake of consistency
-                 */
-                thisrr->type = SSL3_RT_HANDSHAKE;
-                thisrr->rec_version = SSL2_VERSION;
+            thisrr->type = type;
+            thisrr->rec_version = version;
 
-                thisrr->length = sslv2len & 0x7fff;
+            if (rl->msg_callback != NULL)
+                rl->msg_callback(0, version, SSL3_RT_HEADER, p, 5, rl->cbarg);
 
-                if (!rl->funcs->validate_record_header(rl, thisrr)) {
-                    /* RLAYERfatal already called */
-                    return OSSL_RECORD_RETURN_FATAL;
-                }
+            if (!rl->funcs->validate_record_header(rl, thisrr)) {
+                /* RLAYERfatal already called */
+                return OSSL_RECORD_RETURN_FATAL;
+            }
 
-                if (thisrr->length > TLS_BUFFER_get_len(rbuf)
-                        - SSL2_RT_HEADER_LENGTH) {
-                    RLAYERfatal(rl, SSL_AD_RECORD_OVERFLOW,
-                        SSL_R_PACKET_LENGTH_TOO_LONG);
-                    return OSSL_RECORD_RETURN_FATAL;
-                }
-            } else {
-                /* SSLv3+ style record */
-
-                /* Pull apart the header into the TLS_RL_RECORD */
-                if (!PACKET_get_1(&pkt, &type)
-                    || !PACKET_get_net_2(&pkt, &version)
-                    || !PACKET_get_net_2_len(&pkt, &thisrr->length)) {
-                    if (rl->msg_callback != NULL)
-                        rl->msg_callback(0, 0, SSL3_RT_HEADER, p, 5, rl->cbarg);
-                    RLAYERfatal(rl, SSL_AD_DECODE_ERROR, ERR_R_INTERNAL_ERROR);
-                    return OSSL_RECORD_RETURN_FATAL;
-                }
-                thisrr->type = type;
-                thisrr->rec_version = version;
-
-                /*
-                 * When we call validate_record_header() only records actually
-                 * received in SSLv2 format should have the record version set
-                 * to SSL2_VERSION. This way validate_record_header() can know
-                 * what format the record was in based on the version.
-                 */
-                if (thisrr->rec_version == SSL2_VERSION) {
-                    RLAYERfatal(rl, SSL_AD_PROTOCOL_VERSION,
-                        SSL_R_WRONG_VERSION_NUMBER);
-                    return OSSL_RECORD_RETURN_FATAL;
-                }
-
-                if (rl->msg_callback != NULL)
-                    rl->msg_callback(0, version, SSL3_RT_HEADER, p, 5, rl->cbarg);
-
-                if (!rl->funcs->validate_record_header(rl, thisrr)) {
-                    /* RLAYERfatal already called */
-                    return OSSL_RECORD_RETURN_FATAL;
-                }
-
-                if (thisrr->length > TLS_BUFFER_get_len(rbuf) - SSL3_RT_HEADER_LENGTH) {
-                    RLAYERfatal(rl, SSL_AD_RECORD_OVERFLOW,
-                        SSL_R_PACKET_LENGTH_TOO_LONG);
-                    return OSSL_RECORD_RETURN_FATAL;
-                }
+            if (thisrr->length > TLS_BUFFER_get_len(rbuf) - SSL3_RT_HEADER_LENGTH) {
+                RLAYERfatal(rl, SSL_AD_RECORD_OVERFLOW,
+                    SSL_R_PACKET_LENGTH_TOO_LONG);
+                return OSSL_RECORD_RETURN_FATAL;
             }
 
             /* now rl->rstate == SSL_ST_READ_BODY */
@@ -816,7 +762,7 @@ int tls_get_more_records(OSSL_RECORD_LAYER *rl)
     }
 
     if (mac_size > 0) {
-        macbufs = OPENSSL_zalloc(sizeof(*macbufs) * num_recs);
+        macbufs = OPENSSL_calloc(num_recs, sizeof(*macbufs));
         if (macbufs == NULL) {
             RLAYERfatal(rl, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
             return OSSL_RECORD_RETURN_FATAL;
@@ -879,7 +825,7 @@ int tls_get_more_records(OSSL_RECORD_LAYER *rl)
     OSSL_TRACE_BEGIN(TLS)
     {
         BIO_printf(trc_out, "dec %lu\n", (unsigned long)rr[0].length);
-        BIO_dump_indent(trc_out, rr[0].data, rr[0].length, 4);
+        BIO_dump_indent(trc_out, rr[0].data, (int)rr[0].length, 4);
     }
     OSSL_TRACE_END(TLS);
 
@@ -1429,9 +1375,6 @@ tls_new_record_layer(OSSL_LIB_CTX *libctx, const char *propq, int vers,
     case TLS1_1_VERSION:
     case TLS1_VERSION:
         (*retrl)->funcs = &tls_1_funcs;
-        break;
-    case SSL3_VERSION:
-        (*retrl)->funcs = &ssl_3_0_funcs;
         break;
     default:
         /* Should not happen */
@@ -2073,7 +2016,7 @@ const COMP_METHOD *tls_get_compression(OSSL_RECORD_LAYER *rl)
 
 void tls_set_max_frag_len(OSSL_RECORD_LAYER *rl, size_t max_frag_len)
 {
-    rl->max_frag_len = max_frag_len;
+    rl->max_frag_len = (unsigned int)max_frag_len;
     /*
      * We don't need to adjust buffer sizes. Write buffer sizes are
      * automatically checked anyway. We should only be changing the read buffer

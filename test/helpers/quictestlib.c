@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2022-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -812,7 +812,7 @@ static int packet_plain_mutate(const QUIC_PKT_HDR *hdrin,
      * 14 long header (we assume token length is 0,
      * which is fine for server not so fine for client)
      */
-    grow_allowance = 1200 - bufsz - 16 - 14;
+    grow_allowance = 1200 - (int)bufsz - 16 - 14;
     grow_allowance -= hdrin->dst_conn_id.id_len;
     grow_allowance -= hdrin->src_conn_id.id_len;
     assert(grow_allowance >= 0);
@@ -930,9 +930,10 @@ int qtest_fault_prepend_frame(QTEST_FAULT *fault, const unsigned char *frame,
     old_len = fault->pplainio.buf_len;
 
     /* Extend the size of the packet by the size of the new frame */
-    if (!TEST_true(qtest_fault_resize_plain_packet(fault,
-            old_len + frame_len)))
+    if (!qtest_fault_resize_plain_packet(fault, old_len + frame_len)) {
+        TEST_info("Cannot extend packet (%zu + %zu)", old_len, frame_len);
         return 0;
+    }
 
     memmove(buf + frame_len, buf, old_len);
     memcpy(buf, frame, frame_len);
@@ -1168,7 +1169,7 @@ static int pcipher_sendmmsg(BIO *b, BIO_MSG *msg, size_t stride,
     size_t *num_processed)
 {
     BIO *next = BIO_next(b);
-    ossl_ssize_t ret = 0;
+    int ret = 0;
     size_t i = 0, tmpnump;
     QUIC_PKT_HDR hdr;
     PACKET pkt;

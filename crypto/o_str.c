@@ -22,12 +22,15 @@
 char *CRYPTO_strdup(const char *str, const char *file, int line)
 {
     char *ret;
+    size_t len;
 
     if (str == NULL)
         return NULL;
-    ret = CRYPTO_malloc(strlen(str) + 1, file, line);
+
+    len = strlen(str) + 1;
+    ret = CRYPTO_malloc(len, file, line);
     if (ret != NULL)
-        strcpy(ret, str);
+        memcpy(ret, str, len);
     return ret;
 }
 
@@ -341,6 +344,8 @@ char *ossl_buf2hexstr_sep(const unsigned char *buf, long buflen, char sep)
     char *tmp;
     size_t tmp_n;
 
+    if (buflen < 0)
+        return NULL;
     if (buflen == 0)
         return OPENSSL_zalloc(1);
 

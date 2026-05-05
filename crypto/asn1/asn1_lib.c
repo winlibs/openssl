@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -318,7 +318,7 @@ int ASN1_STRING_set(ASN1_STRING *str, const void *_data, int len_in)
             return 0;
         }
     }
-    str->length = len;
+    str->length = (int)len;
     if (data != NULL) {
         memcpy(str->data, data, len);
 #ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
@@ -423,13 +423,6 @@ const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *x)
 {
     return x->data;
 }
-
-#ifndef OPENSSL_NO_DEPRECATED_1_1_0
-unsigned char *ASN1_STRING_data(ASN1_STRING *x)
-{
-    return x->data;
-}
-#endif
 
 /* |max_len| excludes NUL terminator and may be 0 to indicate no restriction */
 char *ossl_sk_ASN1_UTF8STRING2text(STACK_OF(ASN1_UTF8STRING) *text,

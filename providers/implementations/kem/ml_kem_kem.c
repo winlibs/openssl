@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2024-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -16,10 +16,13 @@
 #include <openssl/err.h>
 #include <openssl/proverr.h>
 #include "crypto/ml_kem.h"
+#include "internal/cryptlib.h"
+#include "internal/fips.h"
 #include "prov/provider_ctx.h"
 #include "prov/implementations.h"
 #include "prov/securitycheck.h"
 #include "prov/providercommon.h"
+#include "providers/implementations/kem/ml_kem_kem.inc"
 
 static OSSL_FUNC_kem_newctx_fn ml_kem_newctx;
 static OSSL_FUNC_kem_freectx_fn ml_kem_freectx;
@@ -43,6 +46,12 @@ static void *ml_kem_newctx(void *provctx)
 
     if ((ctx = OPENSSL_malloc(sizeof(*ctx))) == NULL)
         return NULL;
+
+#ifdef FIPS_MODULE
+    if (!ossl_deferred_self_test(PROV_LIBCTX_OF(provctx),
+            ST_ID_KEM_ML_KEM))
+        return NULL;
+#endif
 
     ctx->key = NULL;
     ctx->entropy = NULL;
@@ -68,6 +77,10 @@ static int ml_kem_init(void *vctx, int op, void *key,
         return 0;
     ctx->key = key;
     ctx->op = op;
+    if (ctx->entropy != NULL) {
+        OPENSSL_cleanse(ctx->entropy, ML_KEM_RANDOM_BYTES);
+        ctx->entropy = NULL;
+    }
     return ml_kem_set_ctx_params(vctx, params);
 }
 
@@ -98,27 +111,17 @@ static int ml_kem_decapsulate_init(void *vctx, void *vkey,
 static int ml_kem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_ML_KEM_CTX *ctx = vctx;
-    const OSSL_PARAM *p;
+    struct ml_kem_set_ctx_params_st p;
 
-    if (ctx == NULL)
+    if (ctx == NULL || !ml_kem_set_ctx_params_decoder(params, &p))
         return 0;
 
-    if (ctx->op == EVP_PKEY_OP_DECAPSULATE && ctx->entropy != NULL) {
-        /* Decapsulation is deterministic */
-        OPENSSL_cleanse(ctx->entropy, ML_KEM_RANDOM_BYTES);
-        ctx->entropy = NULL;
-    }
-
-    if (ossl_param_is_empty(params))
-        return 1;
-
     /* Encapsulation ephemeral input key material "ikmE" */
-    if (ctx->op == EVP_PKEY_OP_ENCAPSULATE
-        && (p = OSSL_PARAM_locate_const(params, OSSL_KEM_PARAM_IKME)) != NULL) {
+    if (ctx->op == EVP_PKEY_OP_ENCAPSULATE && p.ikme != NULL) {
         size_t len = ML_KEM_RANDOM_BYTES;
 
         ctx->entropy = ctx->entropy_buf;
-        if (OSSL_PARAM_get_octet_string(p, (void **)&ctx->entropy,
+        if (OSSL_PARAM_get_octet_string(p.ikme, (void **)&ctx->entropy,
                 len, &len)
             && len == ML_KEM_RANDOM_BYTES)
             return 1;
@@ -135,12 +138,7 @@ static int ml_kem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 static const OSSL_PARAM *ml_kem_settable_ctx_params(ossl_unused void *vctx,
     ossl_unused void *provctx)
 {
-    static const OSSL_PARAM params[] = {
-        OSSL_PARAM_octet_string(OSSL_KEM_PARAM_IKME, NULL, 0),
-        OSSL_PARAM_END
-    };
-
-    return params;
+    return ml_kem_set_ctx_params_list;
 }
 
 static int ml_kem_encapsulate(void *vctx, unsigned char *ctext, size_t *clen,

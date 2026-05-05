@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2024 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -541,20 +541,20 @@ static void *v2i_ASIdentifiers(const struct v3_ext_method *method,
         /*
          * Number, range, or mistake, pick it apart and figure out which.
          */
-        i1 = strspn(val->value, "0123456789");
+        i1 = (int)strspn(val->value, "0123456789");
         if (val->value[i1] == '\0') {
             is_range = 0;
         } else {
             is_range = 1;
-            i2 = i1 + strspn(val->value + i1, " \t");
+            i2 = i1 + (int)strspn(val->value + i1, " \t");
             if (val->value[i2] != '-') {
                 ERR_raise(ERR_LIB_X509V3, X509V3_R_INVALID_ASNUMBER);
                 X509V3_conf_add_error_name_value(val);
                 goto err;
             }
             i2++;
-            i2 = i2 + strspn(val->value + i2, " \t");
-            i3 = i2 + strspn(val->value + i2, "0123456789");
+            i2 = i2 + (int)strspn(val->value + i2, " \t");
+            i3 = i2 + (int)strspn(val->value + i2, "0123456789");
             if (val->value[i3] != '\0') {
                 ERR_raise(ERR_LIB_X509V3, X509V3_R_INVALID_ASRANGE);
                 X509V3_conf_add_error_name_value(val);
@@ -717,7 +717,7 @@ int X509v3_asid_subset(ASIdentifiers *a, ASIdentifiers *b)
  * Core code for RFC 3779 3.3 path validation.
  */
 static int asid_validate_path_internal(X509_STORE_CTX *ctx,
-    STACK_OF(X509) *chain,
+    const STACK_OF(X509) *chain,
     ASIdentifiers *ext)
 {
     ASIdOrRanges *child_as = NULL, *child_rdi = NULL;
@@ -856,7 +856,7 @@ int X509v3_asid_validate_path(X509_STORE_CTX *ctx)
  * RFC 3779 3.3 path validation of an extension.
  * Test whether chain covers extension.
  */
-int X509v3_asid_validate_resource_set(STACK_OF(X509) *chain,
+int X509v3_asid_validate_resource_set(const STACK_OF(X509) *chain,
     ASIdentifiers *ext, int allow_inheritance)
 {
     if (ext == NULL)

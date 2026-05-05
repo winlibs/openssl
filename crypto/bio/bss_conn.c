@@ -373,8 +373,9 @@ static int conn_read(BIO *b, char *out, int outl)
         return ret;
     }
 
-    if (out != NULL) {
+    if (out != NULL && outl > 0) {
         clear_socket_error();
+        b->flags &= ~BIO_FLAGS_IN_EOF;
 #ifndef OPENSSL_NO_KTLS
         if (BIO_get_ktls_recv(b))
             ret = ktls_read_record(b->num, out, outl);
@@ -414,7 +415,7 @@ static int conn_write(BIO *b, const char *in, int inl)
     clear_socket_error();
 #ifndef OPENSSL_NO_KTLS
     if (BIO_should_ktls_ctrl_msg_flag(b)) {
-        ret = ktls_send_ctrl_message(b->num, data->record_type, in, inl);
+        ret = ktls_send_ctrl_message(b->num, data->record_type, in, inl, 0);
         if (ret >= 0) {
             ret = inl;
             BIO_clear_ktls_ctrl_msg_flag(b);
@@ -735,10 +736,12 @@ static long conn_callback_ctrl(BIO *b, int cmd, BIO_info_cb *fp)
 
 static int conn_puts(BIO *bp, const char *str)
 {
-    int n, ret;
+    int ret;
+    size_t n = strlen(str);
 
-    n = strlen(str);
-    ret = conn_write(bp, str, n);
+    if (n > INT_MAX)
+        return -1;
+    ret = conn_write(bp, str, (int)n);
     return ret;
 }
 
@@ -775,6 +778,7 @@ int conn_gets(BIO *bio, char *buf, int size)
     }
 
     clear_socket_error();
+    bio->flags &= ~BIO_FLAGS_IN_EOF;
     while (size-- > 1) {
 #ifndef OPENSSL_NO_KTLS
         if (BIO_get_ktls_recv(bio))
@@ -794,7 +798,7 @@ int conn_gets(BIO *bio, char *buf, int size)
             break;
     }
     *ptr = '\0';
-    return ret > 0 || (bio->flags & BIO_FLAGS_IN_EOF) != 0 ? ptr - buf : ret;
+    return ret > 0 || (bio->flags & BIO_FLAGS_IN_EOF) != 0 ? (int)(ptr - buf) : ret;
 }
 
 static int conn_sendmmsg(BIO *bio, BIO_MSG *msg, size_t stride, size_t num_msgs,

@@ -20,8 +20,8 @@ array of L<OSSL_PARAM(3)>.
 
 EVP_PKEY_todata() extracts values from a key I<pkey> using the I<selection>.
 I<selection> is described in L<EVP_PKEY_fromdata(3)/Selections>.
-L<OSSL_PARAM_free(3)> should be used to free the returned parameters in
-I<*params>.
+L<OSSL_PARAM_free(3)> or L<OSSL_PARAM_clear_free(3)> should be used to free the
+returned parameters in I<*params>.
 
 EVP_PKEY_export() is similar to EVP_PKEY_todata() but uses a callback
 I<export_cb> that gets passed the value of I<export_cbarg>.
@@ -34,6 +34,9 @@ EVP_PKEY_todata() if persistence is required.
 
 These functions only work with key management methods coming from a provider.
 This is the mirror function to L<EVP_PKEY_fromdata(3)>.
+
+LMS support is disabled by default at compile-time.
+To enable, specify the B<enable-lms> build configuration option.
 
 =head1 RETURN VALUES
 
@@ -52,6 +55,7 @@ L<EVP_PKEY-ED448(7)>,
 L<EVP_PKEY-DH(7)>,
 L<EVP_PKEY-X25519(7)>,
 L<EVP_PKEY-X448(7)>,
+L<EVP_PKEY-LMS(7)>,
 L<EVP_PKEY-ML-DSA(7)>,
 L<EVP_PKEY-ML-KEM(7)>,
 L<EVP_PKEY-SLH-DSA(7)>.
@@ -62,9 +66,11 @@ These functions were added in OpenSSL 3.0.
 
 Support for B<ML-DSA>, B<ML-KEM> and B<SLH-DSA> was added in OpenSSL 3.5.
 
+Support for B<LMS> was added in OpenSSL 3.6.
+
 =head1 COPYRIGHT
 
-Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
 
 Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy

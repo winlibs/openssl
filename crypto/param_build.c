@@ -345,7 +345,7 @@ int OSSL_PARAM_BLD_push_utf8_ptr(OSSL_PARAM_BLD *bld, const char *key,
 {
     OSSL_PARAM_BLD_DEF *pd;
 
-    if (bld == NULL || key == NULL) {
+    if (bld == NULL || key == NULL || buf == NULL) {
         ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
         return 0;
     }
@@ -365,7 +365,7 @@ int OSSL_PARAM_BLD_push_octet_string(OSSL_PARAM_BLD *bld, const char *key,
     OSSL_PARAM_BLD_DEF *pd;
     int secure;
 
-    if (bld == NULL || key == NULL || buf == NULL) {
+    if (bld == NULL || key == NULL || (buf == NULL && bsize != 0)) {
         ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
         return 0;
     }
@@ -383,7 +383,7 @@ int OSSL_PARAM_BLD_push_octet_ptr(OSSL_PARAM_BLD *bld, const char *key,
 {
     OSSL_PARAM_BLD_DEF *pd;
 
-    if (bld == NULL || key == NULL) {
+    if (bld == NULL || key == NULL || (buf == NULL && bsize != 0)) {
         ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
         return 0;
     }
@@ -421,9 +421,9 @@ static OSSL_PARAM *param_bld_convert(OSSL_PARAM_BLD *bld, OSSL_PARAM *param,
         if (pd->bn != NULL) {
             /* BIGNUM */
             if (pd->type == OSSL_PARAM_UNSIGNED_INTEGER)
-                BN_bn2nativepad(pd->bn, (unsigned char *)p, pd->size);
+                BN_bn2nativepad(pd->bn, (unsigned char *)p, (int)pd->size);
             else
-                BN_signed_bn2native(pd->bn, (unsigned char *)p, pd->size);
+                BN_signed_bn2native(pd->bn, (unsigned char *)p, (int)pd->size);
         } else if (pd->type == OSSL_PARAM_OCTET_PTR
             || pd->type == OSSL_PARAM_UTF8_PTR) {
             /* PTR */
@@ -480,6 +480,7 @@ OSSL_PARAM *OSSL_PARAM_BLD_to_param(OSSL_PARAM_BLD *bld)
     blk = p_blks + (OSSL_PARAM_ALIGNED_BLOCK *)(params);
     last = param_bld_convert(bld, params, blk, s);
     ossl_param_set_secure_block(last, s, ss);
+    last->return_size = total;
 
     /* Reset builder for reuse */
     bld->total_blocks = 0;

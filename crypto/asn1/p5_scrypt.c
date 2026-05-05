@@ -17,6 +17,8 @@
 #include <openssl/rand.h>
 #include "crypto/evp.h"
 
+#include <crypto/asn1.h>
+
 #ifndef OPENSSL_NO_SCRYPT
 /* PKCS#5 scrypt password based encryption structures */
 
@@ -30,7 +32,7 @@ ASN1_SEQUENCE(SCRYPT_PARAMS) = {
 
 IMPLEMENT_ASN1_FUNCTIONS(SCRYPT_PARAMS)
 
-static X509_ALGOR *pkcs5_scrypt_set(const unsigned char *salt, size_t saltlen,
+static X509_ALGOR *pkcs5_scrypt_set(const unsigned char *salt, int saltlen,
     size_t keylen, uint64_t N, uint64_t r,
     uint64_t p);
 
@@ -155,7 +157,7 @@ err:
     return NULL;
 }
 
-static X509_ALGOR *pkcs5_scrypt_set(const unsigned char *salt, size_t saltlen,
+static X509_ALGOR *pkcs5_scrypt_set(const unsigned char *salt, int saltlen,
     size_t keylen, uint64_t N, uint64_t r,
     uint64_t p)
 {

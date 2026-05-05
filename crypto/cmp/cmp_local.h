@@ -12,18 +12,9 @@
 #ifndef OSSL_CRYPTO_CMP_LOCAL_H
 #define OSSL_CRYPTO_CMP_LOCAL_H
 
-#include "internal/cryptlib.h"
-
 #include <openssl/cmp.h>
-#include <openssl/err.h>
-
-/* explicit #includes not strictly needed since implied by the above: */
-#include <openssl/crmf.h>
-#include <openssl/types.h>
-#include <openssl/safestack.h>
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
 #include "crypto/x509.h"
+#include "internal/cryptlib.h"
 
 #define IS_NULL_DN(name) (X509_NAME_get_entry(name, 0) == NULL)
 
@@ -954,7 +945,7 @@ OSSL_CMP_MSG *ossl_cmp_certrep_new(OSSL_CMP_CTX *ctx, int bodytype,
     int certReqId, const OSSL_CMP_PKISI *si,
     X509 *cert, const EVP_PKEY *pkey,
     const X509 *encryption_recip,
-    STACK_OF(X509) *chain, STACK_OF(X509) *caPubs,
+    const STACK_OF(X509) *chain, STACK_OF(X509) *caPubs,
     int unprotectedErrors);
 OSSL_CMP_MSG *ossl_cmp_rr_new(OSSL_CMP_CTX *ctx);
 OSSL_CMP_MSG *ossl_cmp_rp_new(OSSL_CMP_CTX *ctx, const OSSL_CMP_PKISI *si,

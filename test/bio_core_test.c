@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2023 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -84,6 +84,7 @@ static int test_bio_core(void)
         || !TEST_ptr((cbio = BIO_new_from_core_bio(libctx, &corebio))))
         goto err;
 
+    BIO_set_mem_eof_return(cbio, 0);
     if (!TEST_int_gt(BIO_puts(corebio.bio, msg), 0)
         /* Test a ctrl via BIO_eof */
         || !TEST_false(BIO_eof(cbio))
@@ -93,7 +94,7 @@ static int test_bio_core(void)
         goto err;
 
     buf[0] = '\0';
-    if (!TEST_int_gt(BIO_write(cbio, msg, strlen(msg) + 1), 0)
+    if (!TEST_int_gt(BIO_write(cbio, msg, (int)(strlen(msg) + 1)), 0)
         || !TEST_int_gt(BIO_read(cbio, buf, sizeof(buf)), 0)
         || !TEST_str_eq(buf, msg))
         goto err;
