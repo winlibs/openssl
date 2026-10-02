@@ -439,6 +439,56 @@ int tls1_change_cipher_state(SSL *s, int which)
         goto err;
     }
 
+    /*
+     * Calculate the explicit IV length and tag length for TLS 1.2 AEAD
+     * ciphersuites so that undersized records can be rejected before AEAD
+     * processing. Only set for the read direction since the check is only
+     * performed on received records.
+     */
+    if ((which & SSL3_CC_READ) != 0) {
+        if (SSL_USE_EXPLICIT_IV(s)) {
+            int mode = EVP_CIPHER_get_mode(c);
+
+            if (mode == EVP_CIPH_CBC_MODE) {
+                int eivlen = EVP_CIPHER_get_iv_length(c);
+
+                if (eivlen <= 1)
+                    eivlen = 0;
+                s->rlayer.eivlen = (size_t)eivlen;
+            } else if (mode == EVP_CIPH_GCM_MODE) {
+                /* Need explicit part of IV for GCM mode */
+                s->rlayer.eivlen = EVP_GCM_TLS_EXPLICIT_IV_LEN;
+            } else if (mode == EVP_CIPH_CCM_MODE) {
+                s->rlayer.eivlen = EVP_CCM_TLS_EXPLICIT_IV_LEN;
+            } else {
+                s->rlayer.eivlen = 0;
+            }
+        } else {
+            s->rlayer.eivlen = 0;
+        }
+
+        switch (EVP_CIPHER_get_mode(c)) {
+        case EVP_CIPH_GCM_MODE:
+            s->rlayer.taglen = EVP_GCM_TLS_TAG_LEN;
+            break;
+        case EVP_CIPH_CCM_MODE:
+            if ((s->s3.tmp.new_cipher->algorithm_enc
+                    & (SSL_AES128CCM8 | SSL_AES256CCM8)) != 0)
+                s->rlayer.taglen = EVP_CCM8_TLS_TAG_LEN;
+            else
+                s->rlayer.taglen = EVP_CCM_TLS_TAG_LEN;
+            break;
+        default:
+            if (EVP_CIPHER_is_a(c, "CHACHA20-POLY1305")) {
+                s->rlayer.taglen = EVP_CHACHAPOLY_TLS_TAG_LEN;
+            } else {
+                /* MAC secret size corresponds to the MAC output size */
+                s->rlayer.taglen = *mac_secret_size;
+            }
+            break;
+        }
+    }
+
 #ifndef OPENSSL_NO_KTLS
     if (s->compress || (s->options & SSL_OP_ENABLE_KTLS) == 0)
         goto skip_ktls;

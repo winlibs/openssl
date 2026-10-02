@@ -167,6 +167,10 @@ typedef struct record_layer_st {
     unsigned int is_first_record;
     /* Count of the number of consecutive warning alerts received */
     unsigned int alert_count;
+    /* Explicit IV length for TLS 1.2 AEAD ciphersuites */
+    size_t eivlen;
+    /* Tag length for TLS 1.2 AEAD ciphersuites */
+    size_t taglen;
     DTLS_RECORD_LAYER *d;
 } RECORD_LAYER;
 
